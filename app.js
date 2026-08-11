@@ -6,7 +6,7 @@ const video = document.querySelector('#camera');
 const captureCanvas = document.querySelector('#captureCanvas');
 const photoCanvas = document.querySelector('#photoCanvas');
 const ctx = photoCanvas.getContext('2d');
-let stream = null, image = null, points = [], stableSince = 0, lastMotion = 0, counting = false, captured = false;
+let stream = null, image = null, points = [], stableSince = 0, lastMotion = 0, counting = false, captured = false, gravityAvailable = false;
 
 function show(id){ screens.forEach(s=>s.classList.toggle('active',s.id===id)); }
 function stopCamera(){ if(stream) stream.getTracks().forEach(t=>t.stop()); stream=null; window.removeEventListener('deviceorientation',onOrientation); window.removeEventListener('devicemotion',onMotion); }
@@ -25,14 +25,23 @@ async function requestSensors(){
 }
 
 function onMotion(e){
+  const gravity=e.accelerationIncludingGravity;
+  if(gravity&&gravity.x!=null&&gravity.y!=null&&gravity.z!=null){
+    gravityAvailable=true;
+    const gx=gravity.x,gy=gravity.y,gz=gravity.z;
+    const tiltX=Math.atan2(gx,Math.hypot(gy,gz))*180/Math.PI;
+    const tiltY=Math.atan2(gy,Math.hypot(gx,gz))*180/Math.PI;
+    updateLevel(tiltX,tiltY);
+  }
   const a=e.acceleration;
-  if(!a)return;
-  const movement=Math.hypot(a.x||0,a.y||0,a.z||0);
-  if(movement>.35){lastMotion=performance.now();stableSince=0;cancelCountdown();}
+  if(a){
+    const movement=Math.hypot(a.x||0,a.y||0,a.z||0);
+    if(movement>.35){lastMotion=performance.now();stableSince=0;cancelCountdown();}
+  }
 }
 
 async function startCamera(){
-  captured=false; stableSince=0; counting=false; show('cameraScreen');
+  captured=false; stableSince=0; counting=false; gravityAvailable=false; show('cameraScreen');
   try{
     await requestSensors();
     stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1920},height:{ideal:1080}},audio:false});
@@ -44,10 +53,12 @@ async function startCamera(){
 }
 
 function onOrientation(e){
-  if(captured) return;
-  const portrait=window.matchMedia('(orientation: portrait)').matches;
-  const x=portrait ? (e.gamma??99) : (90-Math.abs(e.beta??0));
-  const y=portrait ? (Math.abs(e.beta??0)-90) : (e.gamma??99);
+  if(captured||gravityAvailable) return;
+  updateLevel(e.gamma??99,e.beta??99);
+}
+
+function updateLevel(x,y){
+  if(captured)return;
   const level=document.querySelector('#level');
   const title=document.querySelector('#levelTitle');
   const detail=document.querySelector('#levelDetail');
@@ -55,12 +66,12 @@ function onOrientation(e){
   const ok=Math.abs(x)<=TILT_LIMIT&&Math.abs(y)<=TILT_LIMIT;
   level.classList.toggle('ok',ok);
   if(ok){
-    title.textContent='수평이 맞았습니다'; detail.textContent='움직이지 말고 잠시 유지하세요';
+    title.textContent='수평이 맞았습니다'; detail.textContent=`좌우 ${x.toFixed(1)}° · 위아래 ${y.toFixed(1)}° — 움직이지 마세요`;
     if(!stableSince) stableSince=performance.now();
     if(performance.now()-stableSince>=STABLE_MS&&performance.now()-lastMotion>=STABLE_MS&&!counting) autoCountdown();
   }else{
     stableSince=0; cancelCountdown(); title.textContent='휴대폰을 수평으로 맞춰주세요';
-    detail.textContent=`전후·좌우 ±${TILT_LIMIT}° 이내에서 자동 촬영됩니다`;
+    detail.textContent=`좌우 ${x.toFixed(1)}° · 위아래 ${y.toFixed(1)}° (허용 ±${TILT_LIMIT}°)`;
   }
 }
 

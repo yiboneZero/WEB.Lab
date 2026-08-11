@@ -1,73 +1,112 @@
-const units = {
-  mm: { name: "밀리미터", symbol: "mm", meters: 0.001 },
-  cm: { name: "센티미터", symbol: "cm", meters: 0.01 },
-  m: { name: "미터", symbol: "m", meters: 1 },
-  km: { name: "킬로미터", symbol: "km", meters: 1000 },
-  in: { name: "인치", symbol: "in", meters: 0.0254 },
-  ft: { name: "피트", symbol: "ft", meters: 0.3048 },
-  yd: { name: "야드", symbol: "yd", meters: 0.9144 },
-  mi: { name: "마일", symbol: "mi", meters: 1609.344 }
-};
+const BALL_MM = 42.67;
+const TILT_LIMIT = 3;
+const STABLE_MS = 1000;
+const screens = [...document.querySelectorAll('.screen')];
+const video = document.querySelector('#camera');
+const captureCanvas = document.querySelector('#captureCanvas');
+const photoCanvas = document.querySelector('#photoCanvas');
+const ctx = photoCanvas.getContext('2d');
+let stream = null, image = null, points = [], stableSince = 0, lastMotion = 0, counting = false, captured = false;
 
-const amount = document.querySelector("#amount");
-const fromUnit = document.querySelector("#fromUnit");
-const toUnit = document.querySelector("#toUnit");
-const resultValue = document.querySelector("#resultValue");
-const resultUnit = document.querySelector("#resultUnit");
-const quickGrid = document.querySelector("#quickGrid");
-const baseLabel = document.querySelector("#baseLabel");
+function show(id){ screens.forEach(s=>s.classList.toggle('active',s.id===id)); }
+function stopCamera(){ if(stream) stream.getTracks().forEach(t=>t.stop()); stream=null; window.removeEventListener('deviceorientation',onOrientation); window.removeEventListener('devicemotion',onMotion); }
 
-for (const [key, unit] of Object.entries(units)) {
-  const label = `${unit.name} (${unit.symbol})`;
-  fromUnit.add(new Option(label, key));
-  toUnit.add(new Option(label, key));
-}
-fromUnit.value = "m";
-toUnit.value = "cm";
-
-function format(value) {
-  if (!Number.isFinite(value)) return "—";
-  if (value !== 0 && (Math.abs(value) >= 1e9 || Math.abs(value) < 1e-6)) return value.toExponential(6);
-  return new Intl.NumberFormat("ko-KR", { maximumFractionDigits: 8 }).format(value);
+async function requestSensors(){
+  try{
+    if(typeof window.DeviceOrientationEvent?.requestPermission==='function'){
+      const state=await window.DeviceOrientationEvent.requestPermission();
+      if(state!=='granted') return false;
+    }
+    if(typeof window.DeviceMotionEvent?.requestPermission==='function') await window.DeviceMotionEvent.requestPermission();
+    window.addEventListener('deviceorientation',onOrientation,true);
+    window.addEventListener('devicemotion',onMotion,true);
+    return true;
+  }catch{return false;}
 }
 
-function convert(value, from, to) {
-  return value * units[from].meters / units[to].meters;
+function onMotion(e){
+  const a=e.acceleration;
+  if(!a)return;
+  const movement=Math.hypot(a.x||0,a.y||0,a.z||0);
+  if(movement>.35){lastMotion=performance.now();stableSince=0;cancelCountdown();}
 }
 
-function update() {
-  const value = Number(amount.value);
-  const valid = amount.value !== "" && Number.isFinite(value);
-  const result = valid ? convert(value, fromUnit.value, toUnit.value) : NaN;
-  resultValue.textContent = format(result);
-  resultUnit.textContent = units[toUnit.value].name;
-  baseLabel.textContent = valid ? `${format(value)} ${units[fromUnit.value].name} 기준` : "값을 입력해 주세요";
-
-  quickGrid.replaceChildren();
-  Object.entries(units).filter(([key]) => key !== fromUnit.value).slice(0, 6).forEach(([key, unit]) => {
-    const card = document.createElement("div");
-    card.className = "quick-card";
-    card.innerHTML = `<span>${unit.name}</span><strong>${format(valid ? convert(value, fromUnit.value, key) : NaN)} ${unit.symbol}</strong>`;
-    quickGrid.append(card);
-  });
+async function startCamera(){
+  captured=false; stableSince=0; counting=false; show('cameraScreen');
+  try{
+    await requestSensors();
+    stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1920},height:{ideal:1080}},audio:false});
+    video.srcObject=stream; await video.play();
+  }catch(err){
+    stopCamera(); show('homeScreen');
+    alert('카메라를 열 수 없습니다. 카메라 권한을 허용하거나 기존 사진을 불러와 주세요.');
+  }
 }
 
-amount.addEventListener("input", update);
-fromUnit.addEventListener("change", update);
-toUnit.addEventListener("change", update);
-document.querySelector("#swapButton").addEventListener("click", () => {
-  [fromUnit.value, toUnit.value] = [toUnit.value, fromUnit.value];
-  update();
-});
-document.querySelector("#copyButton").addEventListener("click", async (event) => {
-  const text = `${resultValue.textContent} ${units[toUnit.value].symbol}`;
-  await navigator.clipboard.writeText(text);
-  event.currentTarget.textContent = "복사 완료";
-  setTimeout(() => { event.currentTarget.textContent = "결과 복사"; }, 1200);
-});
-document.querySelector("#themeButton").addEventListener("click", () => {
-  document.documentElement.classList.toggle("dark");
-  localStorage.setItem("theme", document.documentElement.classList.contains("dark") ? "dark" : "light");
-});
-if (localStorage.getItem("theme") === "dark") document.documentElement.classList.add("dark");
-update();
+function onOrientation(e){
+  if(captured) return;
+  const portrait=window.matchMedia('(orientation: portrait)').matches;
+  const x=portrait ? (e.gamma??99) : (90-Math.abs(e.beta??0));
+  const y=portrait ? (Math.abs(e.beta??0)-90) : (e.gamma??99);
+  const level=document.querySelector('#level');
+  const title=document.querySelector('#levelTitle');
+  const detail=document.querySelector('#levelDetail');
+  level.querySelector('i').style.transform=`translate(${Math.max(-25,Math.min(25,x*2))}px,${Math.max(-25,Math.min(25,y*2))}px)`;
+  const ok=Math.abs(x)<=TILT_LIMIT&&Math.abs(y)<=TILT_LIMIT;
+  level.classList.toggle('ok',ok);
+  if(ok){
+    title.textContent='수평이 맞았습니다'; detail.textContent='움직이지 말고 잠시 유지하세요';
+    if(!stableSince) stableSince=performance.now();
+    if(performance.now()-stableSince>=STABLE_MS&&performance.now()-lastMotion>=STABLE_MS&&!counting) autoCountdown();
+  }else{
+    stableSince=0; cancelCountdown(); title.textContent='휴대폰을 수평으로 맞춰주세요';
+    detail.textContent=`전후·좌우 ±${TILT_LIMIT}° 이내에서 자동 촬영됩니다`;
+  }
+}
+
+async function autoCountdown(){
+  counting=true; const el=document.querySelector('#countdown');
+  for(let n=3;n>0;n--){ if(!counting)return; el.textContent=n; navigator.vibrate?.(35); await new Promise(r=>setTimeout(r,1000)); }
+  if(counting) takePhoto();
+}
+function cancelCountdown(){ counting=false; document.querySelector('#countdown').textContent=''; }
+
+function takePhoto(){
+  if(captured||!video.videoWidth)return; captured=true; cancelCountdown();
+  captureCanvas.width=video.videoWidth; captureCanvas.height=video.videoHeight;
+  captureCanvas.getContext('2d').drawImage(video,0,0); loadImage(captureCanvas.toDataURL('image/jpeg',.92)); stopCamera();
+}
+
+function loadImage(src){
+  const img=new Image(); img.onload=()=>{image=img;points=[];draw();show('measureScreen');updateStep();}; img.src=src;
+}
+function draw(){
+  if(!image)return; photoCanvas.width=image.naturalWidth||image.width; photoCanvas.height=image.naturalHeight||image.height; ctx.drawImage(image,0,0);
+  const colors=['#b9ff3d','#b9ff3d','#ff633f','#ff633f'];
+  points.forEach((p,i)=>{ctx.beginPath();ctx.arc(p.x,p.y,Math.max(10,photoCanvas.width/120),0,Math.PI*2);ctx.fillStyle=colors[i];ctx.fill();ctx.lineWidth=Math.max(3,photoCanvas.width/400);ctx.strokeStyle='#fff';ctx.stroke();ctx.fillStyle='#0b0d0c';ctx.font=`bold ${Math.max(18,photoCanvas.width/70)}px sans-serif`;ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(i+1,p.x,p.y);});
+  if(points.length>=2){ctx.beginPath();ctx.moveTo(points[0].x,points[0].y);ctx.lineTo(points[1].x,points[1].y);ctx.strokeStyle='#b9ff3d';ctx.lineWidth=Math.max(4,photoCanvas.width/300);ctx.stroke();}
+  if(points.length>=4){ctx.beginPath();ctx.moveTo(points[2].x,points[2].y);ctx.lineTo(points[3].x,points[3].y);ctx.strokeStyle='#ff633f';ctx.stroke();}
+}
+function updateStep(){
+  const title=document.querySelector('#stepTitle'),help=document.querySelector('#stepHelp');
+  if(points.length<2){title.textContent='골프공의 양 끝을 선택하세요';help.textContent='골프공 지름을 가로지르는 두 점을 차례로 터치하세요.';}
+  else{title.textContent='퍼터의 양 끝을 선택하세요';help.textContent='그립 끝과 퍼터 헤드의 가장 먼 끝을 터치하세요.';}
+  document.querySelector('#tapHint').textContent=Math.min(points.length+1,4); document.querySelector('#progressBar').style.width=`${points.length*25}%`;
+}
+function distance(a,b){return Math.hypot(a.x-b.x,a.y-b.y);}
+function calculate(){
+  const ballPx=distance(points[0],points[1]),putterPx=distance(points[2],points[3]);
+  if(ballPx<5)return alert('골프공 기준점이 너무 가깝습니다. 다시 지정해 주세요.');
+  const mm=putterPx/ballPx*BALL_MM; document.querySelector('#resultCm').textContent=(mm/10).toFixed(1);document.querySelector('#resultIn').textContent=(mm/25.4).toFixed(2);show('resultScreen');
+}
+
+photoCanvas.addEventListener('pointerup',e=>{if(points.length>=4)return;const r=photoCanvas.getBoundingClientRect();points.push({x:(e.clientX-r.left)*photoCanvas.width/r.width,y:(e.clientY-r.top)*photoCanvas.height/r.height});draw();updateStep();if(points.length===4)setTimeout(calculate,300);});
+document.querySelector('#startButton').addEventListener('click',startCamera);
+document.querySelector('#manualCapture').addEventListener('click',takePhoto);
+document.querySelector('#closeCamera').addEventListener('click',()=>{stopCamera();show('homeScreen');});
+document.querySelector('#retakeButton').addEventListener('click',()=>{points=[];show('homeScreen');});
+document.querySelector('#newMeasure').addEventListener('click',()=>{points=[];show('homeScreen');});
+document.querySelector('#undoButton').addEventListener('click',()=>{points.pop();draw();updateStep();});
+document.querySelector('#resetPoints').addEventListener('click',()=>{points=[];draw();updateStep();});
+document.querySelector('#fileInput').addEventListener('change',e=>{const f=e.target.files[0];if(f)loadImage(URL.createObjectURL(f));e.target.value='';});
+document.addEventListener('visibilitychange',()=>{if(document.hidden&&stream)stopCamera();});

@@ -328,7 +328,6 @@ document.querySelector('#retryBall').addEventListener('click',()=>{ballCandidate
 document.querySelector('#ballSize').addEventListener('input',e=>{if(!ballCandidate)return;const percent=Number(e.target.value);ballCandidate.radius=ballCandidate.baseRadius*percent/100;document.querySelector('#ballSizeValue').textContent=`${percent}%`;draw();});
 document.querySelector('#confirmPutter').addEventListener('click',calculate);
 document.querySelector('#startButton').addEventListener('click',startCamera);
-document.querySelector('#manualCapture').addEventListener('click',takePhoto);
 document.querySelector('#closeCamera').addEventListener('click',()=>{stopCamera();show('homeScreen');});
 document.querySelector('#retakeButton').addEventListener('click',()=>{points=[];show('homeScreen');});
 document.querySelector('#newMeasure').addEventListener('click',()=>{points=[];show('homeScreen');});

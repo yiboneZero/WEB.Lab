@@ -49,3 +49,8 @@
   white-space: nowrap;
   transform: translateX(-50%);
 }
+
+.camera-screen .level-wrap {
+  bottom: calc(24px + env(safe-area-inset-bottom));
+  padding: 14px 18px;
+}

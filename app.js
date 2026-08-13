@@ -1,4 +1,5 @@
 const BALL_MM = 42.67;
+const BALL_RADIUS_MM = BALL_MM / 2;
 const TILT_LIMIT = 0.5;
 const STABLE_MS = 1000;
 const screens = [...document.querySelectorAll('.screen')];
@@ -8,6 +9,11 @@ const photoCanvas = document.querySelector('#photoCanvas');
 const ctx = photoCanvas.getContext('2d');
 let stream = null, image = null, points = [], stableSince = 0, lastMotion = 0, counting = false, captured = false, gravityAvailable = false;
 let ballMode = 'auto', ballCandidate = null, searchRegion = null;
+
+function selectedFocalLength(){
+  const value=document.querySelector('#deviceModel').value;
+  return value==='custom'?Number(document.querySelector('#customFocal').value):Number(value);
+}
 
 function show(id){ screens.forEach(s=>s.classList.toggle('active',s.id===id)); }
 function stopCamera(){ if(stream) stream.getTracks().forEach(t=>t.stop()); stream=null; window.removeEventListener('deviceorientation',onOrientation); window.removeEventListener('devicemotion',onMotion); }
@@ -211,7 +217,21 @@ function distance(a,b){return Math.hypot(a.x-b.x,a.y-b.y);}
 function calculate(){
   const ballPx=distance(points[0],points[1]),putterPx=distance(points[2],points[3]);
   if(ballPx<5)return alert('골프공 기준점이 너무 가깝습니다. 다시 지정해 주세요.');
-  const mm=putterPx/ballPx*BALL_MM; document.querySelector('#resultCm').textContent=(mm/10).toFixed(1);document.querySelector('#resultIn').textContent=(mm/25.4).toFixed(2);show('resultScreen');
+  const focalMm=selectedFocalLength();
+  if(!Number.isFinite(focalMm)||focalMm<18||focalMm>40)return alert('기기의 35mm 환산 초점거리를 18~40mm 범위로 입력해 주세요.');
+  const rawMm=putterPx/ballPx*BALL_MM;
+  const focalPx=Math.max(photoCanvas.width,photoCanvas.height)*focalMm/36;
+  const ballCenterDistanceMm=BALL_MM*focalPx/ballPx;
+  const cameraHeightMm=ballCenterDistanceMm+BALL_RADIUS_MM;
+  const correction=cameraHeightMm/(cameraHeightMm-BALL_RADIUS_MM);
+  const correctedMm=rawMm*correction;
+  document.querySelector('#resultCm').textContent=(correctedMm/10).toFixed(1);
+  document.querySelector('#resultIn').textContent=(correctedMm/25.4).toFixed(2);
+  document.querySelector('#estimatedHeight').textContent=`${(cameraHeightMm/10).toFixed(1)} cm`;
+  document.querySelector('#rawLength').textContent=`${(rawMm/10).toFixed(1)} cm`;
+  document.querySelector('#correctionRate').textContent=`+${((correction-1)*100).toFixed(2)}%`;
+  document.querySelector('#focalUsed').textContent=`${focalMm.toFixed(1)} mm eq.`;
+  show('resultScreen');
 }
 
 photoCanvas.addEventListener('pointerup',e=>{if(points.length>=4||ballCandidate)return;const r=photoCanvas.getBoundingClientRect();const p={x:(e.clientX-r.left)*photoCanvas.width/r.width,y:(e.clientY-r.top)*photoCanvas.height/r.height};if(points.length===0&&ballMode==='auto')return detectBallAt(p.x,p.y);points.push(p);draw();updateStep();if(points.length===4)setTimeout(calculate,300);});
@@ -223,6 +243,8 @@ document.querySelector('#manualCapture').addEventListener('click',takePhoto);
 document.querySelector('#closeCamera').addEventListener('click',()=>{stopCamera();show('homeScreen');});
 document.querySelector('#retakeButton').addEventListener('click',()=>{points=[];show('homeScreen');});
 document.querySelector('#newMeasure').addEventListener('click',()=>{points=[];show('homeScreen');});
+document.querySelector('#deviceModel').addEventListener('change',e=>{const custom=e.target.value==='custom';document.querySelector('#customFocal').hidden=!custom;localStorage.setItem('webLabDeviceFocal',e.target.value);});
+document.querySelector('#customFocal').addEventListener('change',e=>localStorage.setItem('webLabCustomFocal',e.target.value));
 document.querySelector('#fileInput').addEventListener('change',e=>{
   const input=e.currentTarget,file=input.files?.[0];
   if(!file)return;
@@ -231,3 +253,5 @@ document.querySelector('#fileInput').addEventListener('change',e=>{
   loadImage(objectUrl,()=>URL.revokeObjectURL(objectUrl));input.value='';
 });
 document.addEventListener('visibilitychange',()=>{if(document.hidden&&stream)stopCamera();});
+const savedFocal=localStorage.getItem('webLabDeviceFocal');if(savedFocal&&[...document.querySelector('#deviceModel').options].some(o=>o.value===savedFocal))document.querySelector('#deviceModel').value=savedFocal;
+document.querySelector('#customFocal').value=localStorage.getItem('webLabCustomFocal')||'25';document.querySelector('#customFocal').hidden=document.querySelector('#deviceModel').value!=='custom';

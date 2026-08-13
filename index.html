@@ -7,7 +7,7 @@
   <meta name="description" content="골프공을 기준으로 퍼터 길이를 측정하는 모바일 웹앱">
   <title>WEB.Lab — Putter Measure</title>
   <link rel="stylesheet" href="style.css">
-  <style>.ball-confirm{margin-top:12px;padding:14px;border:1px solid #a7c66a;border-radius:16px;background:#effbd9}.ball-confirm>span{display:block;margin-bottom:10px;font-size:12px;font-weight:750}.ball-confirm>div{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}.ball-confirm .compact{min-height:40px;margin:0;padding:0 7px;border-radius:11px;font-size:11px}.ball-confirm .primary{background:#456d00}</style>
+  <style>.ball-confirm{margin-top:12px;padding:14px;border:1px solid #a7c66a;border-radius:16px;background:#effbd9}.ball-confirm>span{display:block;margin-bottom:8px;font-size:12px;font-weight:750}.size-control{display:grid!important;grid-template-columns:auto 1fr auto!important;align-items:center;gap:8px!important;margin-bottom:12px}.size-control label,.size-control output{font-size:11px;font-weight:800}.size-control input{width:100%;accent-color:#456d00}.ball-confirm>.confirm-actions{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}.ball-confirm .compact{min-height:40px;margin:0;padding:0 7px;border-radius:11px;font-size:11px}.ball-confirm .primary{background:#456d00}</style>
 </head>
 <body>
   <main>
@@ -49,7 +49,7 @@
       <header><button id="retakeButton" class="back">‹ 다시 촬영</button><div class="brand"><b>WEB</b>.Lab</div></header>
         <div class="measure-copy"><p class="eyebrow">CALIBRATION</p><h2 id="stepTitle">골프공의 중심을 터치하세요</h2><p id="stepHelp">터치한 위치 주변의 원형 영역에서 골프공을 자동으로 찾습니다.</p></div>
         <div id="canvasWrap" class="canvas-wrap"><canvas id="photoCanvas"></canvas><div id="tapHint" class="tap-hint">1</div></div>
-        <div id="ballConfirm" class="ball-confirm" hidden><span>초록색 원이 골프공 테두리와 맞나요?</span><div><button id="confirmBall" class="primary compact">맞아요</button><button id="retryBall" class="secondary button compact">다시 선택</button><button id="manualBall" class="secondary button compact">수동 지정</button></div></div>
+        <div id="ballConfirm" class="ball-confirm" hidden><span>초록색 원을 골프공 테두리에 맞춰주세요.</span><div class="size-control"><label for="ballSize">크기</label><input id="ballSize" type="range" min="70" max="130" value="100" step="1"><output id="ballSizeValue">100%</output></div><div class="confirm-actions"><button id="confirmBall" class="primary compact">맞아요</button><button id="retryBall" class="secondary button compact">다시 선택</button><button id="manualBall" class="secondary button compact">수동 지정</button></div></div>
       <div class="progress"><i id="progressBar"></i></div>
       <div class="measure-actions"><button id="undoButton" class="secondary button">이전 점 취소</button><button id="resetPoints" class="secondary button">모두 다시</button></div>
     </section>

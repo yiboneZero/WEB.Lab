@@ -112,26 +112,30 @@ function updateStep(){
   document.querySelector('#tapHint').textContent=Math.min(points.length+1,4); document.querySelector('#progressBar').style.width=`${points.length*25}%`;
 }
 function luminance(data,index){return data[index]*.299+data[index+1]*.587+data[index+2]*.114;}
+function median(values){const sorted=[...values].sort((a,b)=>a-b);return sorted.length?sorted[Math.floor(sorted.length/2)]:0;}
 function detectBallAt(x,y){
   const roiRadius=Math.round(Math.min(photoCanvas.width,photoCanvas.height)*.14);
-  searchRegion={x,y,radius:roiRadius};
-  draw();
+  searchRegion=null;ballCandidate=null;draw();
   const pixels=ctx.getImageData(0,0,photoCanvas.width,photoCanvas.height).data;
-  let bestRadius=0,bestScore=0;
+  searchRegion={x,y,radius:roiRadius};
+  const edgeRadii=[],edgeScores=[];
   const minR=Math.max(8,Math.round(roiRadius*.12)),maxR=Math.round(roiRadius*.78);
-  for(let r=minR;r<=maxR;r+=2){
-    let score=0,samples=0;
-    for(let a=0;a<Math.PI*2;a+=Math.PI/36){
+  for(let a=0;a<Math.PI*2;a+=Math.PI/36){
+    let rayRadius=0,rayScore=0;
+    for(let r=minR;r<=maxR;r+=2){
       const cs=Math.cos(a),sn=Math.sin(a),inner=r-3,outer=r+3;
       const x1=Math.round(x+cs*inner),y1=Math.round(y+sn*inner),x2=Math.round(x+cs*outer),y2=Math.round(y+sn*outer);
       if(x1<0||y1<0||x2<0||y2<0||x1>=photoCanvas.width||x2>=photoCanvas.width||y1>=photoCanvas.height||y2>=photoCanvas.height)continue;
-      score+=Math.abs(luminance(pixels,(y1*photoCanvas.width+x1)*4)-luminance(pixels,(y2*photoCanvas.width+x2)*4));samples++;
+      const gradient=Math.abs(luminance(pixels,(y1*photoCanvas.width+x1)*4)-luminance(pixels,(y2*photoCanvas.width+x2)*4));
+      const score=gradient*(.8+.2*r/maxR);
+      if(score>rayScore){rayScore=score;rayRadius=r;}
     }
-    score=samples?score/samples:0;if(score>bestScore){bestScore=score;bestRadius=r;}
+    if(rayRadius){edgeRadii.push(rayRadius);edgeScores.push(rayScore);}
   }
-  ballCandidate=bestRadius&&bestScore>7?{x,y,radius:bestRadius,score:bestScore}:null;
+  const bestRadius=median(edgeRadii),deviation=median(edgeRadii.map(r=>Math.abs(r-bestRadius))),confidence=median(edgeScores);
+  ballCandidate=bestRadius&&confidence>7&&deviation<bestRadius*.38?{x,y,radius:bestRadius,baseRadius:bestRadius,score:confidence}:null;
   draw();
-  if(ballCandidate){document.querySelector('#ballConfirm').hidden=false;document.querySelector('#stepTitle').textContent='골프공을 찾았습니다';document.querySelector('#stepHelp').textContent='원형 탐색 영역과 자동 검출된 초록색 원을 확인하세요.';}
+  if(ballCandidate){document.querySelector('#ballSize').value='100';document.querySelector('#ballSizeValue').textContent='100%';document.querySelector('#ballConfirm').hidden=false;document.querySelector('#stepTitle').textContent='골프공을 찾았습니다';document.querySelector('#stepHelp').textContent='슬라이더로 초록색 원을 실제 외곽에 정확히 맞추세요.';}
   else{ballMode='manual';searchRegion=null;alert('골프공 테두리를 찾지 못했습니다. 양 끝을 직접 선택해 주세요.');draw();updateStep();}
 }
 function distance(a,b){return Math.hypot(a.x-b.x,a.y-b.y);}
@@ -145,6 +149,7 @@ photoCanvas.addEventListener('pointerup',e=>{if(points.length>=4||ballCandidate)
 document.querySelector('#confirmBall').addEventListener('click',()=>{if(!ballCandidate)return;points=[{x:ballCandidate.x-ballCandidate.radius,y:ballCandidate.y},{x:ballCandidate.x+ballCandidate.radius,y:ballCandidate.y}];ballCandidate=null;searchRegion=null;document.querySelector('#ballConfirm').hidden=true;draw();updateStep();});
 document.querySelector('#retryBall').addEventListener('click',()=>{ballCandidate=null;searchRegion=null;document.querySelector('#ballConfirm').hidden=true;draw();updateStep();});
 document.querySelector('#manualBall').addEventListener('click',()=>{ballMode='manual';ballCandidate=null;searchRegion=null;document.querySelector('#ballConfirm').hidden=true;draw();updateStep();});
+document.querySelector('#ballSize').addEventListener('input',e=>{if(!ballCandidate)return;const percent=Number(e.target.value);ballCandidate.radius=ballCandidate.baseRadius*percent/100;document.querySelector('#ballSizeValue').textContent=`${percent}%`;draw();});
 document.querySelector('#startButton').addEventListener('click',startCamera);
 document.querySelector('#manualCapture').addEventListener('click',takePhoto);
 document.querySelector('#closeCamera').addEventListener('click',()=>{stopCamera();show('homeScreen');});

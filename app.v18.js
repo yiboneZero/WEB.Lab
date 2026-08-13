@@ -125,7 +125,7 @@ function draw(){
   points.forEach((p,i)=>{
     const putterPoint=i>=2;
     if(!putterPoint){const radius=Math.max(10,photoCanvas.width/120);ctx.beginPath();ctx.arc(p.x,p.y,radius,0,Math.PI*2);ctx.fillStyle=colors[i];ctx.fill();ctx.lineWidth=Math.max(3,photoCanvas.width/400);ctx.strokeStyle='#fff';ctx.stroke();return;}
-    const radius=Math.max(26,photoCanvas.width/22),stroke=Math.max(7,photoCanvas.width/180),accent=draggedPoint===i?'#ffe45e':'#ff633f';
+    const radius=Math.max(52,photoCanvas.width/11),stroke=Math.max(7,photoCanvas.width/180),accent=draggedPoint===i?'#ffe45e':'#ff633f';
     ctx.save();ctx.beginPath();ctx.arc(p.x,p.y,radius,0,Math.PI*2);ctx.lineWidth=stroke;ctx.strokeStyle=accent;ctx.stroke();
     ctx.beginPath();ctx.moveTo(p.x-radius*.45,p.y);ctx.lineTo(p.x+radius*.45,p.y);ctx.moveTo(p.x,p.y-radius*.45);ctx.lineTo(p.x,p.y+radius*.45);ctx.lineWidth=Math.max(4,stroke*.55);ctx.strokeStyle='#fff';ctx.stroke();
     const badgeX=p.x+radius*.88,badgeY=p.y-radius*.88,badgeR=radius*.42;ctx.beginPath();ctx.arc(badgeX,badgeY,badgeR,0,Math.PI*2);ctx.fillStyle=accent;ctx.fill();ctx.lineWidth=Math.max(3,stroke*.45);ctx.strokeStyle='#fff';ctx.stroke();ctx.fillStyle='#101311';ctx.font=`bold ${Math.max(24,photoCanvas.width/32)}px sans-serif`;ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(i-1,badgeX,badgeY);ctx.restore();
@@ -287,7 +287,7 @@ function calculate(){
 function canvasPoint(e){const r=photoCanvas.getBoundingClientRect();return{x:(e.clientX-r.left)*photoCanvas.width/r.width,y:(e.clientY-r.top)*photoCanvas.height/r.height,scale:photoCanvas.width/r.width};}
 photoCanvas.addEventListener('pointerdown',e=>{
   if(points.length!==4)return;
-  const p=canvasPoint(e),hitRadius=34*p.scale;
+  const p=canvasPoint(e),hitRadius=68*p.scale;
   const candidates=[2,3].map(i=>({i,d:distance(p,points[i])})).filter(v=>v.d<=hitRadius).sort((a,b)=>a.d-b.d);
   if(!candidates.length)return;
   draggedPoint=candidates[0].i;dragOffset={x:points[draggedPoint].x-p.x,y:points[draggedPoint].y-p.y};photoCanvas.setPointerCapture?.(e.pointerId);draw();e.preventDefault();

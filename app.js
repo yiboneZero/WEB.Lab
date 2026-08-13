@@ -116,6 +116,37 @@ function updateStep(){
 }
 function luminance(data,index){return data[index]*.299+data[index+1]*.587+data[index+2]*.114;}
 function median(values){const sorted=[...values].sort((a,b)=>a-b);return sorted.length?sorted[Math.floor(sorted.length/2)]:0;}
+function solve3(matrix,vector){
+  const a=matrix.map((row,i)=>[...row,vector[i]]);
+  for(let col=0;col<3;col++){
+    let pivot=col;for(let row=col+1;row<3;row++)if(Math.abs(a[row][col])>Math.abs(a[pivot][col]))pivot=row;
+    if(Math.abs(a[pivot][col])<1e-9)return null;
+    [a[col],a[pivot]]=[a[pivot],a[col]];
+    const divisor=a[col][col];for(let j=col;j<4;j++)a[col][j]/=divisor;
+    for(let row=0;row<3;row++)if(row!==col){const factor=a[row][col];for(let j=col;j<4;j++)a[row][j]-=factor*a[col][j];}
+  }
+  return[a[0][3],a[1][3],a[2][3]];
+}
+function fitCircle(points){
+  if(points.length<8)return null;
+  const mx=points.reduce((sum,p)=>sum+p.x,0)/points.length,my=points.reduce((sum,p)=>sum+p.y,0)/points.length;
+  let uu=0,uv=0,vv=0,u=0,v=0,uq=0,vq=0,qsum=0;
+  for(const p of points){const dx=p.x-mx,dy=p.y-my,q=dx*dx+dy*dy;uu+=dx*dx;uv+=dx*dy;vv+=dy*dy;u+=dx;v+=dy;uq+=dx*q;vq+=dy*q;qsum+=q;}
+  const result=solve3([[uu,uv,u],[uv,vv,v],[u,v,points.length]],[-uq,-vq,-qsum]);if(!result)return null;
+  const [A,B,C]=result,cx=-A/2,cy=-B/2,radius=Math.sqrt(Math.max(0,cx*cx+cy*cy-C));
+  return radius>0&&Number.isFinite(radius)?{x:mx+cx,y:my+cy,radius}:null;
+}
+function robustCircle(points,step){
+  let active=points,fit=null;
+  for(let pass=0;pass<3;pass++){
+    fit=fitCircle(active);if(!fit)return null;
+    const residuals=active.map(p=>Math.abs(Math.hypot(p.x-fit.x,p.y-fit.y)-fit.radius));
+    const mad=median(residuals),limit=Math.max(step*1.8,mad*2.8);
+    active=active.filter((p,i)=>residuals[i]<=limit);if(active.length<8)return null;
+  }
+  const error=median(active.map(p=>Math.abs(Math.hypot(p.x-fit.x,p.y-fit.y)-fit.radius)))/fit.radius;
+  return{...fit,error,pointCount:active.length};
+}
 function detectContrastBlob(pixels,width,height,x,y,roiRadius){
   const step=Math.max(1,Math.round(roiRadius/110));
   const centerSamples=[],backgroundSamples=[];
@@ -130,20 +161,22 @@ function detectContrastBlob(pixels,width,height,x,y,roiRadius){
   if(Math.abs(contrast)<28)return null;
   const bright=contrast>0,threshold=backgroundTone+contrast*.46;
   const cols=Math.ceil(width/step),rows=Math.ceil(height/step),sx=Math.round(x/step),sy=Math.round(y/step);
-  const key=(gx,gy)=>gy*cols+gx,seen=new Uint8Array(cols*rows),queue=[[sx,sy]];
+  const key=(gx,gy)=>gy*cols+gx,seen=new Uint8Array(cols*rows),insideMask=new Uint8Array(cols*rows),queue=[[sx,sy]],component=[];
   let head=0,count=0,sumX=0,sumY=0,minX=Infinity,maxX=-Infinity,minY=Infinity,maxY=-Infinity;
   while(head<queue.length){
     const [gx,gy]=queue[head++];if(gx<0||gy<0||gx>=cols||gy>=rows||seen[key(gx,gy)])continue;seen[key(gx,gy)]=1;
     const px=Math.min(width-1,gx*step),py=Math.min(height-1,gy*step);if(Math.hypot(px-x,py-y)>roiRadius*.7)continue;
     const value=luminance(pixels,(py*width+px)*4),inside=bright?value>=threshold:value<=threshold;if(!inside)continue;
-    count++;sumX+=px;sumY+=py;minX=Math.min(minX,px);maxX=Math.max(maxX,px);minY=Math.min(minY,py);maxY=Math.max(maxY,py);
+    insideMask[key(gx,gy)]=1;component.push([gx,gy]);count++;sumX+=px;sumY+=py;minX=Math.min(minX,px);maxX=Math.max(maxX,px);minY=Math.min(minY,py);maxY=Math.max(maxY,py);
     for(let oy=-1;oy<=1;oy++)for(let ox=-1;ox<=1;ox++)if(ox||oy)queue.push([gx+ox,gy+oy]);
   }
   if(count<12)return null;
   const diameterX=maxX-minX+step,diameterY=maxY-minY+step,ratio=Math.min(diameterX,diameterY)/Math.max(diameterX,diameterY);
-  const radius=(diameterX+diameterY)/4;
-  if(ratio<.72||radius<roiRadius*.045||radius>roiRadius*.34)return null;
-  return{x:sumX/count,y:sumY/count,radius,baseRadius:radius,score:Math.abs(contrast),method:'contrast'};
+  if(ratio<.68)return null;
+  const boundary=component.filter(([gx,gy])=>[[1,0],[-1,0],[0,1],[0,-1]].some(([dx,dy])=>gx+dx<0||gy+dy<0||gx+dx>=cols||gy+dy>=rows||!insideMask[key(gx+dx,gy+dy)])).map(([gx,gy])=>({x:gx*step,y:gy*step}));
+  const circle=robustCircle(boundary,step);if(!circle)return null;
+  if(circle.error>.12||circle.radius<roiRadius*.045||circle.radius>roiRadius*.34||Math.hypot(circle.x-x,circle.y-y)>circle.radius*1.25)return null;
+  return{x:circle.x,y:circle.y,radius:circle.radius,baseRadius:circle.radius,score:Math.abs(contrast),fitError:circle.error,method:'robust-circle-fit'};
 }
 function detectBallAt(x,y){
   const roiRadius=Math.round(Math.min(photoCanvas.width,photoCanvas.height)*.14);
@@ -152,7 +185,7 @@ function detectBallAt(x,y){
   searchRegion={x,y,radius:roiRadius};
   const contrastBall=detectContrastBlob(pixels,photoCanvas.width,photoCanvas.height,x,y,roiRadius);
   if(contrastBall){
-    ballCandidate=contrastBall;draw();document.querySelector('#ballSize').value='100';document.querySelector('#ballSizeValue').textContent='100%';document.querySelector('#ballConfirm').hidden=false;document.querySelector('#stepTitle').textContent='골프공을 찾았습니다';document.querySelector('#stepHelp').textContent='밝은 골프공 외곽을 찾았습니다. 초록색 원을 확인하세요.';return;
+    ballCandidate=contrastBall;draw();document.querySelector('#ballSize').value='100';document.querySelector('#ballSizeValue').textContent='100%';document.querySelector('#ballConfirm').hidden=false;document.querySelector('#stepTitle').textContent='골프공을 찾았습니다';document.querySelector('#stepHelp').textContent='외곽점에 원의 방정식을 맞췄습니다. 초록색 원을 확인하세요.';return;
   }
   const edgeRadii=[],edgeScores=[];
   const minR=Math.max(8,Math.round(roiRadius*.12)),maxR=Math.round(roiRadius*.78);

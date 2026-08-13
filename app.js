@@ -7,6 +7,7 @@ const captureCanvas = document.querySelector('#captureCanvas');
 const photoCanvas = document.querySelector('#photoCanvas');
 const ctx = photoCanvas.getContext('2d');
 let stream = null, image = null, points = [], stableSince = 0, lastMotion = 0, counting = false, captured = false, gravityAvailable = false;
+let ballMode = 'auto', ballCandidate = null, searchRegion = null;
 
 function show(id){ screens.forEach(s=>s.classList.toggle('active',s.id===id)); }
 function stopCamera(){ if(stream) stream.getTracks().forEach(t=>t.stop()); stream=null; window.removeEventListener('deviceorientation',onOrientation); window.removeEventListener('devicemotion',onMotion); }
@@ -89,10 +90,15 @@ function takePhoto(){
 }
 
 function loadImage(src){
-  const img=new Image(); img.onload=()=>{image=img;points=[];draw();show('measureScreen');updateStep();}; img.src=src;
+  const img=new Image(); img.onload=()=>{image=img;points=[];ballMode='auto';ballCandidate=null;searchRegion=null;document.querySelector('#ballConfirm').hidden=true;draw();show('measureScreen');updateStep();}; img.src=src;
 }
 function draw(){
   if(!image)return; photoCanvas.width=image.naturalWidth||image.width; photoCanvas.height=image.naturalHeight||image.height; ctx.drawImage(image,0,0);
+  if(searchRegion){
+    ctx.save();ctx.beginPath();ctx.rect(0,0,photoCanvas.width,photoCanvas.height);ctx.arc(searchRegion.x,searchRegion.y,searchRegion.radius,0,Math.PI*2,true);ctx.fillStyle='rgba(0,0,0,.58)';ctx.fill('evenodd');
+    ctx.beginPath();ctx.arc(searchRegion.x,searchRegion.y,searchRegion.radius,0,Math.PI*2);ctx.setLineDash([14,10]);ctx.lineWidth=Math.max(4,photoCanvas.width/350);ctx.strokeStyle='#fff';ctx.stroke();ctx.restore();
+  }
+  if(ballCandidate){ctx.save();ctx.beginPath();ctx.arc(ballCandidate.x,ballCandidate.y,ballCandidate.radius,0,Math.PI*2);ctx.lineWidth=Math.max(6,photoCanvas.width/260);ctx.strokeStyle='#b9ff3d';ctx.shadowColor='#000';ctx.shadowBlur=8;ctx.stroke();ctx.restore();}
   const colors=['#b9ff3d','#b9ff3d','#ff633f','#ff633f'];
   points.forEach((p,i)=>{ctx.beginPath();ctx.arc(p.x,p.y,Math.max(10,photoCanvas.width/120),0,Math.PI*2);ctx.fillStyle=colors[i];ctx.fill();ctx.lineWidth=Math.max(3,photoCanvas.width/400);ctx.strokeStyle='#fff';ctx.stroke();ctx.fillStyle='#0b0d0c';ctx.font=`bold ${Math.max(18,photoCanvas.width/70)}px sans-serif`;ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(i+1,p.x,p.y);});
   if(points.length>=2){ctx.beginPath();ctx.moveTo(points[0].x,points[0].y);ctx.lineTo(points[1].x,points[1].y);ctx.strokeStyle='#b9ff3d';ctx.lineWidth=Math.max(4,photoCanvas.width/300);ctx.stroke();}
@@ -100,9 +106,33 @@ function draw(){
 }
 function updateStep(){
   const title=document.querySelector('#stepTitle'),help=document.querySelector('#stepHelp');
-  if(points.length<2){title.textContent='골프공의 양 끝을 선택하세요';help.textContent='골프공 지름을 가로지르는 두 점을 차례로 터치하세요.';}
+  if(points.length<2&&ballMode==='auto'&&!ballCandidate){title.textContent='골프공의 중심을 터치하세요';help.textContent='터치점 주변의 원형 영역에서 골프공을 자동으로 찾습니다.';}
+  else if(points.length<2){title.textContent='골프공의 양 끝을 선택하세요';help.textContent='골프공 지름을 가로지르는 두 점을 차례로 터치하세요.';}
   else{title.textContent='퍼터의 양 끝을 선택하세요';help.textContent='그립 끝과 퍼터 헤드의 가장 먼 끝을 터치하세요.';}
   document.querySelector('#tapHint').textContent=Math.min(points.length+1,4); document.querySelector('#progressBar').style.width=`${points.length*25}%`;
+}
+function luminance(data,index){return data[index]*.299+data[index+1]*.587+data[index+2]*.114;}
+function detectBallAt(x,y){
+  const roiRadius=Math.round(Math.min(photoCanvas.width,photoCanvas.height)*.14);
+  searchRegion={x,y,radius:roiRadius};
+  draw();
+  const pixels=ctx.getImageData(0,0,photoCanvas.width,photoCanvas.height).data;
+  let bestRadius=0,bestScore=0;
+  const minR=Math.max(8,Math.round(roiRadius*.12)),maxR=Math.round(roiRadius*.78);
+  for(let r=minR;r<=maxR;r+=2){
+    let score=0,samples=0;
+    for(let a=0;a<Math.PI*2;a+=Math.PI/36){
+      const cs=Math.cos(a),sn=Math.sin(a),inner=r-3,outer=r+3;
+      const x1=Math.round(x+cs*inner),y1=Math.round(y+sn*inner),x2=Math.round(x+cs*outer),y2=Math.round(y+sn*outer);
+      if(x1<0||y1<0||x2<0||y2<0||x1>=photoCanvas.width||x2>=photoCanvas.width||y1>=photoCanvas.height||y2>=photoCanvas.height)continue;
+      score+=Math.abs(luminance(pixels,(y1*photoCanvas.width+x1)*4)-luminance(pixels,(y2*photoCanvas.width+x2)*4));samples++;
+    }
+    score=samples?score/samples:0;if(score>bestScore){bestScore=score;bestRadius=r;}
+  }
+  ballCandidate=bestRadius&&bestScore>7?{x,y,radius:bestRadius,score:bestScore}:null;
+  draw();
+  if(ballCandidate){document.querySelector('#ballConfirm').hidden=false;document.querySelector('#stepTitle').textContent='골프공을 찾았습니다';document.querySelector('#stepHelp').textContent='원형 탐색 영역과 자동 검출된 초록색 원을 확인하세요.';}
+  else{ballMode='manual';searchRegion=null;alert('골프공 테두리를 찾지 못했습니다. 양 끝을 직접 선택해 주세요.');draw();updateStep();}
 }
 function distance(a,b){return Math.hypot(a.x-b.x,a.y-b.y);}
 function calculate(){
@@ -111,13 +141,16 @@ function calculate(){
   const mm=putterPx/ballPx*BALL_MM; document.querySelector('#resultCm').textContent=(mm/10).toFixed(1);document.querySelector('#resultIn').textContent=(mm/25.4).toFixed(2);show('resultScreen');
 }
 
-photoCanvas.addEventListener('pointerup',e=>{if(points.length>=4)return;const r=photoCanvas.getBoundingClientRect();points.push({x:(e.clientX-r.left)*photoCanvas.width/r.width,y:(e.clientY-r.top)*photoCanvas.height/r.height});draw();updateStep();if(points.length===4)setTimeout(calculate,300);});
+photoCanvas.addEventListener('pointerup',e=>{if(points.length>=4||ballCandidate)return;const r=photoCanvas.getBoundingClientRect();const p={x:(e.clientX-r.left)*photoCanvas.width/r.width,y:(e.clientY-r.top)*photoCanvas.height/r.height};if(points.length===0&&ballMode==='auto')return detectBallAt(p.x,p.y);points.push(p);draw();updateStep();if(points.length===4)setTimeout(calculate,300);});
+document.querySelector('#confirmBall').addEventListener('click',()=>{if(!ballCandidate)return;points=[{x:ballCandidate.x-ballCandidate.radius,y:ballCandidate.y},{x:ballCandidate.x+ballCandidate.radius,y:ballCandidate.y}];ballCandidate=null;searchRegion=null;document.querySelector('#ballConfirm').hidden=true;draw();updateStep();});
+document.querySelector('#retryBall').addEventListener('click',()=>{ballCandidate=null;searchRegion=null;document.querySelector('#ballConfirm').hidden=true;draw();updateStep();});
+document.querySelector('#manualBall').addEventListener('click',()=>{ballMode='manual';ballCandidate=null;searchRegion=null;document.querySelector('#ballConfirm').hidden=true;draw();updateStep();});
 document.querySelector('#startButton').addEventListener('click',startCamera);
 document.querySelector('#manualCapture').addEventListener('click',takePhoto);
 document.querySelector('#closeCamera').addEventListener('click',()=>{stopCamera();show('homeScreen');});
 document.querySelector('#retakeButton').addEventListener('click',()=>{points=[];show('homeScreen');});
 document.querySelector('#newMeasure').addEventListener('click',()=>{points=[];show('homeScreen');});
-document.querySelector('#undoButton').addEventListener('click',()=>{points.pop();draw();updateStep();});
-document.querySelector('#resetPoints').addEventListener('click',()=>{points=[];draw();updateStep();});
+document.querySelector('#undoButton').addEventListener('click',()=>{points.pop();if(points.length<2)ballMode='manual';draw();updateStep();});
+document.querySelector('#resetPoints').addEventListener('click',()=>{points=[];ballMode='auto';ballCandidate=null;searchRegion=null;document.querySelector('#ballConfirm').hidden=true;draw();updateStep();});
 document.querySelector('#fileInput').addEventListener('change',e=>{const f=e.target.files[0];if(f)loadImage(URL.createObjectURL(f));e.target.value='';});
 document.addEventListener('visibilitychange',()=>{if(document.hidden&&stream)stopCamera();});

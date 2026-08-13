@@ -7,6 +7,7 @@
   <meta name="description" content="골프공을 기준으로 퍼터 길이를 측정하는 모바일 웹앱">
   <title>WEB.Lab — Putter Measure</title>
   <link rel="stylesheet" href="style.css">
+  <style>.ball-confirm{margin-top:12px;padding:14px;border:1px solid #a7c66a;border-radius:16px;background:#effbd9}.ball-confirm>span{display:block;margin-bottom:10px;font-size:12px;font-weight:750}.ball-confirm>div{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}.ball-confirm .compact{min-height:40px;margin:0;padding:0 7px;border-radius:11px;font-size:11px}.ball-confirm .primary{background:#456d00}</style>
 </head>
 <body>
   <main>
@@ -46,8 +47,9 @@
 
     <section id="measureScreen" class="screen measure-screen">
       <header><button id="retakeButton" class="back">‹ 다시 촬영</button><div class="brand"><b>WEB</b>.Lab</div></header>
-      <div class="measure-copy"><p class="eyebrow">CALIBRATION</p><h2 id="stepTitle">골프공의 양 끝을 선택하세요</h2><p id="stepHelp">골프공 지름을 가로지르는 두 점을 차례로 터치하세요.</p></div>
-      <div id="canvasWrap" class="canvas-wrap"><canvas id="photoCanvas"></canvas><div id="tapHint" class="tap-hint">1</div></div>
+        <div class="measure-copy"><p class="eyebrow">CALIBRATION</p><h2 id="stepTitle">골프공의 중심을 터치하세요</h2><p id="stepHelp">터치한 위치 주변의 원형 영역에서 골프공을 자동으로 찾습니다.</p></div>
+        <div id="canvasWrap" class="canvas-wrap"><canvas id="photoCanvas"></canvas><div id="tapHint" class="tap-hint">1</div></div>
+        <div id="ballConfirm" class="ball-confirm" hidden><span>초록색 원이 골프공 테두리와 맞나요?</span><div><button id="confirmBall" class="primary compact">맞아요</button><button id="retryBall" class="secondary button compact">다시 선택</button><button id="manualBall" class="secondary button compact">수동 지정</button></div></div>
       <div class="progress"><i id="progressBar"></i></div>
       <div class="measure-actions"><button id="undoButton" class="secondary button">이전 점 취소</button><button id="resetPoints" class="secondary button">모두 다시</button></div>
     </section>

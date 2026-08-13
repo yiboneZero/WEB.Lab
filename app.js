@@ -90,7 +90,10 @@ function takePhoto(){
 }
 
 function loadImage(src){
-  const img=new Image(); img.onload=()=>{image=img;points=[];ballMode='auto';ballCandidate=null;searchRegion=null;document.querySelector('#ballConfirm').hidden=true;draw();show('measureScreen');updateStep();}; img.src=src;
+  const img=new Image();
+  img.onload=()=>{image=img;points=[];ballMode='auto';ballCandidate=null;searchRegion=null;document.querySelector('#ballConfirm').hidden=true;draw();show('measureScreen');updateStep();};
+  img.onerror=()=>alert('사진을 불러오지 못했습니다. JPG, PNG 또는 WebP 사진으로 다시 시도해 주세요.');
+  img.src=src;
 }
 function draw(){
   if(!image)return; photoCanvas.width=image.naturalWidth||image.width; photoCanvas.height=image.naturalHeight||image.height; ctx.drawImage(image,0,0);
@@ -189,5 +192,13 @@ document.querySelector('#retakeButton').addEventListener('click',()=>{points=[];
 document.querySelector('#newMeasure').addEventListener('click',()=>{points=[];show('homeScreen');});
 document.querySelector('#undoButton').addEventListener('click',()=>{if(points.length<=2){points=[];ballMode='auto';}else points.pop();draw();updateStep();});
 document.querySelector('#resetPoints').addEventListener('click',()=>{points=[];ballMode='auto';ballCandidate=null;searchRegion=null;document.querySelector('#ballConfirm').hidden=true;draw();updateStep();});
-document.querySelector('#fileInput').addEventListener('change',e=>{const f=e.target.files[0];if(f)loadImage(URL.createObjectURL(f));e.target.value='';});
+document.querySelector('#fileInput').addEventListener('change',e=>{
+  const input=e.currentTarget,file=input.files?.[0];
+  if(!file)return;
+  if(!file.type.startsWith('image/')){alert('이미지 파일을 선택해 주세요.');input.value='';return;}
+  const reader=new FileReader();
+  reader.onload=()=>loadImage(reader.result);
+  reader.onerror=()=>alert('선택한 사진을 읽지 못했습니다. 다른 사진으로 다시 시도해 주세요.');
+  reader.readAsDataURL(file);input.value='';
+});
 document.addEventListener('visibilitychange',()=>{if(document.hidden&&stream)stopCamera();});

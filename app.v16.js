@@ -11,6 +11,7 @@ let stream = null, image = null, points = [], stableSince = 0, lastMotion = 0, c
 let ballMode = 'auto', ballCandidate = null, searchRegion = null;
 let draggedPoint = -1;
 let dragOffset = {x:0,y:0};
+let focalReferencePx = 0;
 
 function selectedFocalLength(){
   const value=document.querySelector('#deviceModel').value;
@@ -50,7 +51,7 @@ function onMotion(e){
 }
 
 async function startCamera(){
-  captured=false; stableSince=0; counting=false; gravityAvailable=false; show('cameraScreen');
+  captured=false; stableSince=0; counting=false; gravityAvailable=false; focalReferencePx=0; show('cameraScreen');
   try{
     await requestSensors();
     stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1920},height:{ideal:1080}},audio:false});
@@ -93,8 +94,18 @@ function cancelCountdown(){ counting=false; document.querySelector('#countdown')
 
 function takePhoto(){
   if(captured||!video.videoWidth)return; captured=true; cancelCountdown();
-  captureCanvas.width=video.videoWidth; captureCanvas.height=video.videoHeight;
-  captureCanvas.getContext('2d').drawImage(video,0,0); loadImage(captureCanvas.toDataURL('image/jpeg',.92)); stopCamera();
+  const frame=document.querySelector('.frame').getBoundingClientRect(),videoRect=video.getBoundingClientRect();
+  const sourceWidth=video.videoWidth,sourceHeight=video.videoHeight,coverScale=Math.max(videoRect.width/sourceWidth,videoRect.height/sourceHeight);
+  const renderedWidth=sourceWidth*coverScale,renderedHeight=sourceHeight*coverScale;
+  const cropX=(frame.left-videoRect.left+(renderedWidth-videoRect.width)/2)/coverScale;
+  const cropY=(frame.top-videoRect.top+(renderedHeight-videoRect.height)/2)/coverScale;
+  const cropWidth=frame.width/coverScale,cropHeight=frame.height/coverScale;
+  const sx=Math.max(0,Math.min(sourceWidth-1,cropX)),sy=Math.max(0,Math.min(sourceHeight-1,cropY));
+  const sw=Math.max(1,Math.min(sourceWidth-sx,cropWidth)),sh=Math.max(1,Math.min(sourceHeight-sy,cropHeight));
+  focalReferencePx=Math.max(sourceWidth,sourceHeight);
+  captureCanvas.width=Math.round(sw);captureCanvas.height=Math.round(sh);
+  captureCanvas.getContext('2d').drawImage(video,sx,sy,sw,sh,0,0,captureCanvas.width,captureCanvas.height);
+  loadImage(captureCanvas.toDataURL('image/jpeg',.94));stopCamera();
 }
 
 function loadImage(src,cleanup){
@@ -257,7 +268,7 @@ function calculate(){
   const focalMm=selectedFocalLength();
   if(!Number.isFinite(focalMm)||focalMm<18||focalMm>40)return alert('기기의 35mm 환산 초점거리를 18~40mm 범위로 입력해 주세요.');
   const rawMm=putterPx/ballPx*BALL_MM;
-  const focalPx=Math.max(photoCanvas.width,photoCanvas.height)*focalMm/36;
+  const focalPx=(focalReferencePx||Math.max(photoCanvas.width,photoCanvas.height))*focalMm/36;
   const ballCenterDistanceMm=BALL_MM*focalPx/ballPx;
   const cameraHeightMm=ballCenterDistanceMm+BALL_RADIUS_MM;
   const correction=cameraHeightMm/(cameraHeightMm-BALL_RADIUS_MM);
@@ -304,7 +315,7 @@ document.querySelector('#fileInput').addEventListener('change',e=>{
   const input=e.currentTarget,file=input.files?.[0];
   if(!file)return;
   if(!file.type.startsWith('image/')){alert('이미지 파일을 선택해 주세요.');input.value='';return;}
-  const objectUrl=URL.createObjectURL(file);
+  focalReferencePx=0;const objectUrl=URL.createObjectURL(file);
   loadImage(objectUrl,()=>URL.revokeObjectURL(objectUrl));input.value='';
 });
 document.addEventListener('visibilitychange',()=>{if(document.hidden&&stream)stopCamera();});

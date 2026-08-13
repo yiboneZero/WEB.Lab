@@ -25,3 +25,27 @@
   height: 38px;
   font-size: 14px;
 }
+
+.camera-top span {
+  line-height: 1.35;
+}
+
+.camera-top span b {
+  color: var(--green);
+  font-size: 14px;
+}
+
+.frame > em {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  padding: 6px 10px;
+  border-radius: 99px;
+  background: rgba(0, 0, 0, .62);
+  color: white;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 800;
+  white-space: nowrap;
+  transform: translateX(-50%);
+}

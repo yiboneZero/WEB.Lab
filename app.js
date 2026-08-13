@@ -114,7 +114,7 @@ function draw(){
     const putterPoint=i>=2;
     if(!putterPoint){const radius=Math.max(10,photoCanvas.width/120);ctx.beginPath();ctx.arc(p.x,p.y,radius,0,Math.PI*2);ctx.fillStyle=colors[i];ctx.fill();ctx.lineWidth=Math.max(3,photoCanvas.width/400);ctx.strokeStyle='#fff';ctx.stroke();return;}
     const radius=Math.max(26,photoCanvas.width/22),stroke=Math.max(7,photoCanvas.width/180),accent=draggedPoint===i?'#ffe45e':'#ff633f';
-    ctx.save();ctx.beginPath();ctx.arc(p.x,p.y,radius,0,Math.PI*2);ctx.fillStyle='rgba(255,99,63,.05)';ctx.fill();ctx.lineWidth=stroke;ctx.strokeStyle=accent;ctx.stroke();
+    ctx.save();ctx.beginPath();ctx.arc(p.x,p.y,radius,0,Math.PI*2);ctx.lineWidth=stroke;ctx.strokeStyle=accent;ctx.stroke();
     ctx.beginPath();ctx.moveTo(p.x-radius*.45,p.y);ctx.lineTo(p.x+radius*.45,p.y);ctx.moveTo(p.x,p.y-radius*.45);ctx.lineTo(p.x,p.y+radius*.45);ctx.lineWidth=Math.max(4,stroke*.55);ctx.strokeStyle='#fff';ctx.stroke();
     const badgeX=p.x+radius*.88,badgeY=p.y-radius*.88,badgeR=radius*.42;ctx.beginPath();ctx.arc(badgeX,badgeY,badgeR,0,Math.PI*2);ctx.fillStyle=accent;ctx.fill();ctx.lineWidth=Math.max(3,stroke*.45);ctx.strokeStyle='#fff';ctx.stroke();ctx.fillStyle='#101311';ctx.font=`bold ${Math.max(24,photoCanvas.width/32)}px sans-serif`;ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(i-1,badgeX,badgeY);ctx.restore();
   });

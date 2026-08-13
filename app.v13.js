@@ -163,6 +163,26 @@ function robustCircle(points,step){
   const error=median(active.map(p=>Math.abs(Math.hypot(p.x-fit.x,p.y-fit.y)-fit.radius)))/fit.radius;
   return{...fit,error,pointCount:active.length};
 }
+function refineBallOuterEdge(pixels,width,height,initial,step){
+  const edgePoints=[],sampleGap=Math.max(2,step*2),minR=initial.radius*.72,maxR=initial.radius*1.42;
+  for(let angle=0;angle<Math.PI*2;angle+=Math.PI/72){
+    const cs=Math.cos(angle),sn=Math.sin(angle);let bestRadius=0,bestScore=0;
+    for(let radius=minR;radius<=maxR;radius+=Math.max(1,step)){
+      const ix=Math.round(initial.x+cs*(radius-sampleGap)),iy=Math.round(initial.y+sn*(radius-sampleGap));
+      const ox=Math.round(initial.x+cs*(radius+sampleGap)),oy=Math.round(initial.y+sn*(radius+sampleGap));
+      if(ix<0||iy<0||ox<0||oy<0||ix>=width||ox>=width||iy>=height||oy>=height)continue;
+      const score=luminance(pixels,(iy*width+ix)*4)-luminance(pixels,(oy*width+ox)*4);
+      if(score>bestScore){bestScore=score;bestRadius=radius;}
+    }
+    if(bestRadius&&bestScore>10)edgePoints.push({x:initial.x+cs*bestRadius,y:initial.y+sn*bestRadius,radius:bestRadius,score:bestScore});
+  }
+  if(edgePoints.length<36)return initial;
+  const typicalRadius=median(edgePoints.map(p=>p.radius));
+  const consistent=edgePoints.filter(p=>Math.abs(p.radius-typicalRadius)<=Math.max(step*3,typicalRadius*.16));
+  const refined=robustCircle(consistent,Math.max(1,step));
+  if(!refined||refined.error>.08||refined.radius<initial.radius*.88||refined.radius>initial.radius*1.35)return initial;
+  return{...refined,baseRadius:refined.radius,score:median(consistent.map(p=>p.score)),method:'outer-edge-circle-fit'};
+}
 function detectContrastBlob(pixels,width,height,x,y,roiRadius){
   const step=Math.max(1,Math.round(roiRadius/110));
   const centerSamples=[],backgroundSamples=[];
@@ -192,7 +212,8 @@ function detectContrastBlob(pixels,width,height,x,y,roiRadius){
   const boundary=component.filter(([gx,gy])=>[[1,0],[-1,0],[0,1],[0,-1]].some(([dx,dy])=>gx+dx<0||gy+dy<0||gx+dx>=cols||gy+dy>=rows||!insideMask[key(gx+dx,gy+dy)])).map(([gx,gy])=>({x:gx*step,y:gy*step}));
   const circle=robustCircle(boundary,step);if(!circle)return null;
   if(circle.error>.12||circle.radius<roiRadius*.045||circle.radius>roiRadius*.34||Math.hypot(circle.x-x,circle.y-y)>circle.radius*1.25)return null;
-  return{x:circle.x,y:circle.y,radius:circle.radius,baseRadius:circle.radius,score:Math.abs(contrast),fitError:circle.error,method:'robust-circle-fit'};
+  const initial={x:circle.x,y:circle.y,radius:circle.radius,baseRadius:circle.radius,score:Math.abs(contrast),fitError:circle.error,method:'robust-circle-fit'};
+  return refineBallOuterEdge(pixels,width,height,initial,step);
 }
 function detectBallAt(x,y){
   const roiRadius=Math.round(Math.min(photoCanvas.width,photoCanvas.height)*.14);
@@ -241,6 +262,8 @@ function calculate(){
   document.querySelector('#rawLength').textContent=`${(rawMm/10).toFixed(1)} cm`;
   document.querySelector('#correctionRate').textContent=`+${((correction-1)*100).toFixed(2)}%`;
   document.querySelector('#focalUsed').textContent=`${focalMm.toFixed(1)} mm eq.`;
+  document.querySelector('#ballPixelDiameter').textContent=`${ballPx.toFixed(1)} px`;
+  document.querySelector('#putterPixelLength').textContent=`${putterPx.toFixed(1)} px`;
   show('resultScreen');
 }
 

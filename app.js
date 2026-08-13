@@ -110,9 +110,16 @@ function draw(){
   }
   if(ballCandidate){ctx.save();ctx.beginPath();ctx.arc(ballCandidate.x,ballCandidate.y,ballCandidate.radius,0,Math.PI*2);ctx.lineWidth=Math.max(6,photoCanvas.width/260);ctx.strokeStyle='#b9ff3d';ctx.shadowColor='#000';ctx.shadowBlur=8;ctx.stroke();ctx.restore();}
   const colors=['#b9ff3d','#b9ff3d','#ff633f','#ff633f'];
-  points.forEach((p,i)=>{const putterPoint=i>=2,pointRadius=Math.max(putterPoint?28:10,photoCanvas.width/(putterPoint?16:120));ctx.beginPath();ctx.arc(p.x,p.y,pointRadius,0,Math.PI*2);ctx.fillStyle=colors[i];ctx.fill();ctx.lineWidth=Math.max(putterPoint?8:3,photoCanvas.width/300);ctx.strokeStyle=draggedPoint===i?'#ffe45e':'#fff';ctx.stroke();ctx.fillStyle='#0b0d0c';ctx.font=`bold ${Math.max(putterPoint?32:18,photoCanvas.width/(putterPoint?22:70))}px sans-serif`;ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(putterPoint?i-1:i+1,p.x,p.y);});
+  points.forEach((p,i)=>{
+    const putterPoint=i>=2;
+    if(!putterPoint){const radius=Math.max(10,photoCanvas.width/120);ctx.beginPath();ctx.arc(p.x,p.y,radius,0,Math.PI*2);ctx.fillStyle=colors[i];ctx.fill();ctx.lineWidth=Math.max(3,photoCanvas.width/400);ctx.strokeStyle='#fff';ctx.stroke();return;}
+    const radius=Math.max(26,photoCanvas.width/22),stroke=Math.max(7,photoCanvas.width/180),accent=draggedPoint===i?'#ffe45e':'#ff633f';
+    ctx.save();ctx.beginPath();ctx.arc(p.x,p.y,radius,0,Math.PI*2);ctx.fillStyle='rgba(255,99,63,.05)';ctx.fill();ctx.lineWidth=stroke;ctx.strokeStyle=accent;ctx.stroke();
+    ctx.beginPath();ctx.moveTo(p.x-radius*.45,p.y);ctx.lineTo(p.x+radius*.45,p.y);ctx.moveTo(p.x,p.y-radius*.45);ctx.lineTo(p.x,p.y+radius*.45);ctx.lineWidth=Math.max(4,stroke*.55);ctx.strokeStyle='#fff';ctx.stroke();
+    const badgeX=p.x+radius*.88,badgeY=p.y-radius*.88,badgeR=radius*.42;ctx.beginPath();ctx.arc(badgeX,badgeY,badgeR,0,Math.PI*2);ctx.fillStyle=accent;ctx.fill();ctx.lineWidth=Math.max(3,stroke*.45);ctx.strokeStyle='#fff';ctx.stroke();ctx.fillStyle='#101311';ctx.font=`bold ${Math.max(24,photoCanvas.width/32)}px sans-serif`;ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(i-1,badgeX,badgeY);ctx.restore();
+  });
   if(points.length>=2){ctx.beginPath();ctx.moveTo(points[0].x,points[0].y);ctx.lineTo(points[1].x,points[1].y);ctx.strokeStyle='#b9ff3d';ctx.lineWidth=Math.max(4,photoCanvas.width/300);ctx.stroke();}
-  if(points.length>=4){ctx.beginPath();ctx.moveTo(points[2].x,points[2].y);ctx.lineTo(points[3].x,points[3].y);ctx.strokeStyle='#ff633f';ctx.lineWidth=Math.max(8,photoCanvas.width/120);ctx.stroke();}
+  if(points.length>=4){ctx.save();ctx.beginPath();ctx.moveTo(points[2].x,points[2].y);ctx.lineTo(points[3].x,points[3].y);ctx.strokeStyle='rgba(255,99,63,.75)';ctx.setLineDash([Math.max(14,photoCanvas.width/80),Math.max(10,photoCanvas.width/120)]);ctx.lineWidth=Math.max(5,photoCanvas.width/220);ctx.stroke();ctx.restore();}
 }
 function updateStep(){
   const title=document.querySelector('#stepTitle'),help=document.querySelector('#stepHelp');

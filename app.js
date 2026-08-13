@@ -1,7 +1,6 @@
 const BALL_MM = 42.67;
 const TILT_LIMIT = 3;
 const STABLE_MS = 1000;
-const AUTO_ZONE = { x: .73, y: .46 };
 const screens = [...document.querySelectorAll('.screen')];
 const video = document.querySelector('#camera');
 const captureCanvas = document.querySelector('#captureCanvas');
@@ -91,7 +90,7 @@ function takePhoto(){
 }
 
 function loadImage(src){
-  const img=new Image(); img.onload=()=>{image=img;points=[];ballMode='auto';ballCandidate=null;searchRegion=null;document.querySelector('#ballConfirm').hidden=true;draw();show('measureScreen');document.querySelector('#stepTitle').textContent='골프공을 자동으로 찾는 중';document.querySelector('#stepHelp').textContent='촬영 화면의 원형 영역 전체를 분석합니다.';requestAnimationFrame(()=>detectBallAt(photoCanvas.width*AUTO_ZONE.x,photoCanvas.height*AUTO_ZONE.y,true));}; img.src=src;
+  const img=new Image(); img.onload=()=>{image=img;points=[];ballMode='auto';ballCandidate=null;searchRegion=null;document.querySelector('#ballConfirm').hidden=true;draw();show('measureScreen');updateStep();}; img.src=src;
 }
 function draw(){
   if(!image)return; photoCanvas.width=image.naturalWidth||image.width; photoCanvas.height=image.naturalHeight||image.height; ctx.drawImage(image,0,0);
@@ -107,7 +106,7 @@ function draw(){
 }
 function updateStep(){
   const title=document.querySelector('#stepTitle'),help=document.querySelector('#stepHelp');
-  if(points.length<2&&ballMode==='auto'&&!ballCandidate){title.textContent='골프공의 중심을 터치하세요';help.textContent='터치점 주변의 원형 영역에서 골프공을 자동으로 찾습니다.';}
+  if(points.length<2&&ballMode==='auto'&&!ballCandidate){title.textContent='골프공을 터치하세요';help.textContent='터치점을 중심으로 원형 영역을 만들고 그 안에서 자동으로 찾습니다.';}
   else if(points.length<2){title.textContent='골프공 위치를 다시 선택하세요';help.textContent='골프공 중심을 한 번 터치하면 주변에서 자동으로 찾습니다.';}
   else{title.textContent='퍼터의 양 끝을 선택하세요';help.textContent='그립 끝과 퍼터 헤드의 가장 먼 끝을 터치하세요.';}
   document.querySelector('#tapHint').textContent=Math.min(points.length+1,4); document.querySelector('#progressBar').style.width=`${points.length*25}%`;
@@ -143,29 +142,15 @@ function detectContrastBlob(pixels,width,height,x,y,roiRadius){
   if(ratio<.72||radius<roiRadius*.045||radius>roiRadius*.34)return null;
   return{x:sumX/count,y:sumY/count,radius,baseRadius:radius,score:Math.abs(contrast),method:'contrast'};
 }
-function findBrightSeed(pixels,width,height,cx,cy,roiRadius){
-  const step=Math.max(2,Math.round(roiRadius/80));
-  let best={x:cx,y:cy,score:-Infinity};
-  for(let y=Math.max(step,Math.round(cy-roiRadius*.72));y<=Math.min(height-step-1,Math.round(cy+roiRadius*.72));y+=step){
-    for(let x=Math.max(step,Math.round(cx-roiRadius*.72));x<=Math.min(width-step-1,Math.round(cx+roiRadius*.72));x+=step){
-      if(Math.hypot(x-cx,y-cy)>roiRadius*.72)continue;
-      let total=0;for(let oy=-1;oy<=1;oy++)for(let ox=-1;ox<=1;ox++)total+=luminance(pixels,((y+oy*step)*width+x+ox*step)*4);
-      const score=total/9;if(score>best.score)best={x,y,score};
-    }
-  }
-  return best;
-}
-function detectBallAt(x,y,scanArea=false){
+function detectBallAt(x,y){
   const roiRadius=Math.round(Math.min(photoCanvas.width,photoCanvas.height)*.14);
   searchRegion=null;ballCandidate=null;draw();
   const pixels=ctx.getImageData(0,0,photoCanvas.width,photoCanvas.height).data;
   searchRegion={x,y,radius:roiRadius};
-  const seed=scanArea?findBrightSeed(pixels,photoCanvas.width,photoCanvas.height,x,y,roiRadius):{x,y};
-  const contrastBall=detectContrastBlob(pixels,photoCanvas.width,photoCanvas.height,seed.x,seed.y,roiRadius);
+  const contrastBall=detectContrastBlob(pixels,photoCanvas.width,photoCanvas.height,x,y,roiRadius);
   if(contrastBall){
     ballCandidate=contrastBall;draw();document.querySelector('#ballSize').value='100';document.querySelector('#ballSizeValue').textContent='100%';document.querySelector('#ballConfirm').hidden=false;document.querySelector('#stepTitle').textContent='골프공을 찾았습니다';document.querySelector('#stepHelp').textContent='밝은 골프공 외곽을 찾았습니다. 초록색 원을 확인하세요.';return;
   }
-  if(scanArea){draw();document.querySelector('#stepTitle').textContent='영역에서 골프공을 찾지 못했습니다';document.querySelector('#stepHelp').textContent='다시 촬영하거나 사진에서 골프공 중심을 한 번 터치하세요.';return;}
   const edgeRadii=[],edgeScores=[];
   const minR=Math.max(8,Math.round(roiRadius*.12)),maxR=Math.round(roiRadius*.78);
   for(let a=0;a<Math.PI*2;a+=Math.PI/36){

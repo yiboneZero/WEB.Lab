@@ -233,31 +233,46 @@ function detectContrastBlob(pixels,width,height,x,y,roiRadius){
   return refineBallOuterEdge(pixels,width,height,initial,step);
 }
 function findBallInRegion(pixels,width,height,x,y,roiRadius){
-  const scanStep=Math.max(2,Math.round(roiRadius/32)),samples=[];
-  for(let py=Math.max(0,Math.round(y-roiRadius*.78));py<=Math.min(height-1,Math.round(y+roiRadius*.78));py+=scanStep){
-    for(let px=Math.max(0,Math.round(x-roiRadius*.78));px<=Math.min(width-1,Math.round(x+roiRadius*.78));px+=scanStep){
-      if(Math.hypot(px-x,py-y)>roiRadius*.78)continue;
-      const tone=luminance(pixels,(py*width+px)*4);
-      samples.push({x:px,y:py,tone});
+  const step=Math.max(1,Math.round(roiRadius/100)),left=Math.max(0,Math.floor(x-roiRadius)),top=Math.max(0,Math.floor(y-roiRadius));
+  const right=Math.min(width-1,Math.ceil(x+roiRadius)),bottom=Math.min(height-1,Math.ceil(y+roiRadius));
+  const cols=Math.floor((right-left)/step)+1,rows=Math.floor((bottom-top)/step)+1,tones=[];
+  const key=(gx,gy)=>gy*cols+gx,mask=new Uint8Array(cols*rows),seen=new Uint8Array(cols*rows);
+  for(let gy=0;gy<rows;gy++)for(let gx=0;gx<cols;gx++){
+    const px=left+gx*step,py=top+gy*step;if(Math.hypot(px-x,py-y)>roiRadius*.92)continue;
+    tones.push(luminance(pixels,(py*width+px)*4));
+  }
+  if(tones.length<30)return null;
+  const sorted=[...tones].sort((a,b)=>a-b),background=sorted[Math.floor(sorted.length*.5)],brightTone=sorted[Math.floor(sorted.length*.86)];
+  const threshold=Math.max(135,background+28,brightTone+5);
+  for(let gy=0;gy<rows;gy++)for(let gx=0;gx<cols;gx++){
+    const px=left+gx*step,py=top+gy*step;if(Math.hypot(px-x,py-y)>roiRadius*.92)continue;
+    if(luminance(pixels,(py*width+px)*4)>=threshold)mask[key(gx,gy)]=1;
+  }
+  const candidates=[];
+  for(let sy=0;sy<rows;sy++)for(let sx=0;sx<cols;sx++){
+    if(!mask[key(sx,sy)]||seen[key(sx,sy)])continue;
+    const queue=[[sx,sy]],component=[];seen[key(sx,sy)]=1;
+    for(let head=0;head<queue.length;head++){
+      const [gx,gy]=queue[head];component.push([gx,gy]);
+      for(let oy=-1;oy<=1;oy++)for(let ox=-1;ox<=1;ox++){
+        if(!ox&&!oy)continue;const nx=gx+ox,ny=gy+oy;
+        if(nx<0||ny<0||nx>=cols||ny>=rows||seen[key(nx,ny)]||!mask[key(nx,ny)])continue;
+        seen[key(nx,ny)]=1;queue.push([nx,ny]);
+      }
     }
+    if(component.length<18)continue;
+    let minGX=Infinity,maxGX=-Infinity,minGY=Infinity,maxGY=-Infinity;
+    for(const [gx,gy] of component){minGX=Math.min(minGX,gx);maxGX=Math.max(maxGX,gx);minGY=Math.min(minGY,gy);maxGY=Math.max(maxGY,gy);}
+    const spanX=(maxGX-minGX+1)*step,spanY=(maxGY-minGY+1)*step;
+    const ratio=Math.min(spanX,spanY)/Math.max(spanX,spanY);if(ratio<.62)continue;
+    const boundary=component.filter(([gx,gy])=>[[1,0],[-1,0],[0,1],[0,-1]].some(([dx,dy])=>gx+dx<0||gy+dy<0||gx+dx>=cols||gy+dy>=rows||!mask[key(gx+dx,gy+dy)])).map(([gx,gy])=>({x:left+gx*step,y:top+gy*step}));
+    const circle=robustCircle(boundary,step);if(!circle||circle.error>.15||circle.radius<roiRadius*.025||circle.radius>roiRadius*.28)continue;
+    if(Math.hypot(circle.x-x,circle.y-y)+circle.radius>roiRadius*.94)continue;
+    const initial={...circle,baseRadius:circle.radius,score:(brightTone-background)*ratio,fitError:circle.error,method:'region-component-circle'};
+    const refined=refineBallOuterEdge(pixels,width,height,initial,step);
+    candidates.push({...refined,regionScore:refined.radius*ratio/(1+(refined.error||circle.error)*8)});
   }
-  samples.sort((a,b)=>b.tone-a.tone);
-  const seeds=[];
-  for(const sample of samples){
-    if(seeds.length>=16)break;
-    if(sample.tone<145)break;
-    if(seeds.every(seed=>Math.hypot(seed.x-sample.x,seed.y-sample.y)>roiRadius*.1))seeds.push(sample);
-  }
-  const candidates=[],localRadius=Math.max(48,Math.round(roiRadius*.58));
-  for(const seed of seeds){
-    const candidate=detectContrastBlob(pixels,width,height,seed.x,seed.y,localRadius);
-    if(!candidate||Math.hypot(candidate.x-x,candidate.y-y)+candidate.radius>roiRadius*.92)continue;
-    if(candidates.some(item=>Math.hypot(item.x-candidate.x,item.y-candidate.y)<Math.max(item.radius,candidate.radius)))continue;
-    const centerPreference=1-Math.min(1,Math.hypot(candidate.x-x,candidate.y-y)/roiRadius)*.18;
-    candidates.push({...candidate,regionScore:candidate.score*centerPreference/(1+(candidate.fitError||0)*8)});
-  }
-  candidates.sort((a,b)=>b.regionScore-a.regionScore);
-  return candidates[0]||null;
+  candidates.sort((a,b)=>b.regionScore-a.regionScore);return candidates[0]||null;
 }
 function detectBallAt(x,y){
   const roiRadius=Math.round(Math.min(photoCanvas.width,photoCanvas.height)*.14);

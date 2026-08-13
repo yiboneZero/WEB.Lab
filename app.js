@@ -113,11 +113,44 @@ function updateStep(){
 }
 function luminance(data,index){return data[index]*.299+data[index+1]*.587+data[index+2]*.114;}
 function median(values){const sorted=[...values].sort((a,b)=>a-b);return sorted.length?sorted[Math.floor(sorted.length/2)]:0;}
+function detectContrastBlob(pixels,width,height,x,y,roiRadius){
+  const step=Math.max(1,Math.round(roiRadius/110));
+  const centerSamples=[],backgroundSamples=[];
+  for(let py=Math.max(0,Math.round(y-roiRadius));py<=Math.min(height-1,Math.round(y+roiRadius));py+=step){
+    for(let px=Math.max(0,Math.round(x-roiRadius));px<=Math.min(width-1,Math.round(x+roiRadius));px+=step){
+      const d=Math.hypot(px-x,py-y),value=luminance(pixels,(py*width+px)*4);
+      if(d<roiRadius*.09)centerSamples.push(value);
+      else if(d>roiRadius*.62&&d<roiRadius*.9)backgroundSamples.push(value);
+    }
+  }
+  const centerTone=median(centerSamples),backgroundTone=median(backgroundSamples),contrast=centerTone-backgroundTone;
+  if(Math.abs(contrast)<28)return null;
+  const bright=contrast>0,threshold=backgroundTone+contrast*.46;
+  const cols=Math.ceil(width/step),rows=Math.ceil(height/step),sx=Math.round(x/step),sy=Math.round(y/step);
+  const key=(gx,gy)=>gy*cols+gx,seen=new Uint8Array(cols*rows),queue=[[sx,sy]];
+  let head=0,count=0,sumX=0,sumY=0,minX=Infinity,maxX=-Infinity,minY=Infinity,maxY=-Infinity;
+  while(head<queue.length){
+    const [gx,gy]=queue[head++];if(gx<0||gy<0||gx>=cols||gy>=rows||seen[key(gx,gy)])continue;seen[key(gx,gy)]=1;
+    const px=Math.min(width-1,gx*step),py=Math.min(height-1,gy*step);if(Math.hypot(px-x,py-y)>roiRadius*.7)continue;
+    const value=luminance(pixels,(py*width+px)*4),inside=bright?value>=threshold:value<=threshold;if(!inside)continue;
+    count++;sumX+=px;sumY+=py;minX=Math.min(minX,px);maxX=Math.max(maxX,px);minY=Math.min(minY,py);maxY=Math.max(maxY,py);
+    for(let oy=-1;oy<=1;oy++)for(let ox=-1;ox<=1;ox++)if(ox||oy)queue.push([gx+ox,gy+oy]);
+  }
+  if(count<12)return null;
+  const diameterX=maxX-minX+step,diameterY=maxY-minY+step,ratio=Math.min(diameterX,diameterY)/Math.max(diameterX,diameterY);
+  const radius=(diameterX+diameterY)/4;
+  if(ratio<.72||radius<roiRadius*.045||radius>roiRadius*.34)return null;
+  return{x:sumX/count,y:sumY/count,radius,baseRadius:radius,score:Math.abs(contrast),method:'contrast'};
+}
 function detectBallAt(x,y){
   const roiRadius=Math.round(Math.min(photoCanvas.width,photoCanvas.height)*.14);
   searchRegion=null;ballCandidate=null;draw();
   const pixels=ctx.getImageData(0,0,photoCanvas.width,photoCanvas.height).data;
   searchRegion={x,y,radius:roiRadius};
+  const contrastBall=detectContrastBlob(pixels,photoCanvas.width,photoCanvas.height,x,y,roiRadius);
+  if(contrastBall){
+    ballCandidate=contrastBall;draw();document.querySelector('#ballSize').value='100';document.querySelector('#ballSizeValue').textContent='100%';document.querySelector('#ballConfirm').hidden=false;document.querySelector('#stepTitle').textContent='골프공을 찾았습니다';document.querySelector('#stepHelp').textContent='밝은 골프공 외곽을 찾았습니다. 초록색 원을 확인하세요.';return;
+  }
   const edgeRadii=[],edgeScores=[];
   const minR=Math.max(8,Math.round(roiRadius*.12)),maxR=Math.round(roiRadius*.78);
   for(let a=0;a<Math.PI*2;a+=Math.PI/36){

@@ -123,12 +123,18 @@ function draw(){
   if(points.length>=4){ctx.save();ctx.beginPath();ctx.moveTo(points[2].x,points[2].y);ctx.lineTo(points[3].x,points[3].y);ctx.strokeStyle='rgba(255,99,63,.75)';ctx.setLineDash([Math.max(14,photoCanvas.width/80),Math.max(10,photoCanvas.width/120)]);ctx.lineWidth=Math.max(5,photoCanvas.width/220);ctx.stroke();ctx.restore();}
 }
 function updateStep(){
-  const title=document.querySelector('#stepTitle'),help=document.querySelector('#stepHelp');
-  if(points.length<2&&ballMode==='auto'&&!ballCandidate){title.textContent='골프공을 터치하세요';help.textContent='터치점을 중심으로 원형 영역을 만들고 그 안에서 자동으로 찾습니다.';}
-  else if(points.length<2){title.textContent='골프공 위치를 다시 선택하세요';help.textContent='골프공 중심을 한 번 터치하면 주변에서 자동으로 찾습니다.';}
-  else if(points.length<4){title.textContent='퍼터의 양 끝을 선택하세요';help.textContent='그립 끝과 퍼터 헤드의 가장 먼 끝을 터치하세요.';}
-  else{title.textContent='퍼터 끝점 위치를 보정하세요';help.textContent='주황색 두 점을 드래그한 뒤 아래 측정 버튼을 누르세요.';}
-  document.querySelector('#tapHint').textContent=Math.min(points.length+1,4);document.querySelector('#tapHint').hidden=points.length===4;document.querySelector('#progressBar').style.width=`${points.length*25}%`;
+  const title=document.querySelector('#stepTitle'),help=document.querySelector('#stepHelp'),panel=document.querySelector('#adjustPanel'),panelTitle=panel.querySelector('b'),panelHelp=panel.querySelector('span'),confirm=document.querySelector('#confirmPutter');
+  let stage=1;
+  if(points.length<2&&ballMode==='auto'&&!ballCandidate){title.textContent='골프공을 터치하세요';help.textContent='공이 들어 있는 영역을 터치하면 실제 외곽을 자동으로 찾습니다.';}
+  else if(points.length<2){title.textContent='검출된 골프공을 확인하세요';help.textContent='초록색 원이 공 외곽과 맞으면 확인하고, 아니면 다시 선택하세요.';}
+  else if(points.length===2){stage=2;title.textContent='퍼터 그립 끝을 선택하세요';help.textContent='그립의 가장 아래쪽 끝을 한 번 터치하세요.';}
+  else if(points.length===3){stage=3;title.textContent='퍼터 헤드 끝을 선택하세요';help.textContent='그립 끝에서 가장 먼 퍼터 헤드 끝을 한 번 터치하세요.';}
+  else{stage=4;title.textContent='선택점 위치를 보정하세요';help.textContent='주황색 두 점을 드래그해 맞춘 뒤 측정 버튼을 누르세요.';}
+  panel.hidden=points.length<2;confirm.disabled=points.length<4;
+  if(points.length===2){panelTitle.textContent='1. 퍼터 그립 끝을 선택하세요';panelHelp.textContent='사진에서 그립의 가장 아래쪽 끝을 터치하세요.';confirm.textContent='두 점을 선택하면 측정할 수 있습니다';}
+  else if(points.length===3){panelTitle.textContent='2. 퍼터 헤드 끝을 선택하세요';panelHelp.textContent='그립에서 가장 먼 헤드 끝을 터치하세요.';confirm.textContent='헤드 끝을 선택해 주세요';}
+  else if(points.length>=4){panelTitle.textContent='퍼터 끝점을 보정하세요';panelHelp.textContent='주황색 1·2번 점을 드래그해 정확히 맞추세요.';confirm.textContent='이 위치로 측정';}
+  document.querySelector('#tapHint').textContent=stage;document.querySelector('#tapHint').hidden=stage===4;document.querySelector('#progressBar').style.width=`${stage*25}%`;
 }
 function luminance(data,index){return data[index]*.299+data[index+1]*.587+data[index+2]*.114;}
 function median(values){const sorted=[...values].sort((a,b)=>a-b);return sorted.length?sorted[Math.floor(sorted.length/2)]:0;}
@@ -280,7 +286,7 @@ photoCanvas.addEventListener('pointerup',e=>{
   if(draggedPoint>=2){draggedPoint=-1;dragOffset={x:0,y:0};draw();return;}
   if(points.length>=4||ballCandidate)return;
   const p=canvasPoint(e);if(points.length===0&&ballMode==='auto')return detectBallAt(p.x,p.y);points.push({x:p.x,y:p.y});draw();updateStep();
-  if(points.length===4){document.querySelector('#adjustPanel').hidden=false;document.querySelector('#canvasWrap').classList.add('adjusting');updateStep();}
+  if(points.length===4){document.querySelector('#canvasWrap').classList.add('adjusting');updateStep();}
 });
 photoCanvas.addEventListener('pointercancel',()=>{draggedPoint=-1;dragOffset={x:0,y:0};draw();});
 document.querySelector('#confirmBall').addEventListener('click',()=>{if(!ballCandidate)return;points=[{x:ballCandidate.x-ballCandidate.radius,y:ballCandidate.y},{x:ballCandidate.x+ballCandidate.radius,y:ballCandidate.y}];ballCandidate=null;searchRegion=null;document.querySelector('#ballConfirm').hidden=true;draw();updateStep();});

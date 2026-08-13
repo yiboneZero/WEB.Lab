@@ -1,5 +1,4 @@
 const BALL_MM = 42.67;
-const BALL_RADIUS_MM = BALL_MM / 2;
 const TILT_LIMIT = 1.5;
 const STABLE_MS = 1000;
 const screens = [...document.querySelectorAll('.screen')];
@@ -11,12 +10,6 @@ let stream = null, image = null, points = [], stableSince = 0, lastMotion = 0, c
 let ballMode = 'auto', ballCandidate = null, searchRegion = null;
 let draggedPoint = -1;
 let dragOffset = {x:0,y:0};
-let focalReferencePx = 0;
-
-function selectedFocalLength(){
-  const value=document.querySelector('#deviceModel').value;
-  return value==='custom'?Number(document.querySelector('#customFocal').value):Number(value);
-}
 
 function show(id){ screens.forEach(s=>s.classList.toggle('active',s.id===id)); }
 function stopCamera(){ if(stream) stream.getTracks().forEach(t=>t.stop()); stream=null; window.removeEventListener('deviceorientation',onOrientation); window.removeEventListener('devicemotion',onMotion); }
@@ -51,7 +44,7 @@ function onMotion(e){
 }
 
 async function startCamera(){
-  captured=false; stableSince=0; counting=false; gravityAvailable=false; focalReferencePx=0; show('cameraScreen');
+  captured=false; stableSince=0; counting=false; gravityAvailable=false; show('cameraScreen');
   try{
     await requestSensors();
     stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1920},height:{ideal:1080}},audio:false});
@@ -102,7 +95,6 @@ function takePhoto(){
   const cropWidth=frame.width/coverScale,cropHeight=frame.height/coverScale;
   const sx=Math.max(0,Math.min(sourceWidth-1,cropX)),sy=Math.max(0,Math.min(sourceHeight-1,cropY));
   const sw=Math.max(1,Math.min(sourceWidth-sx,cropWidth)),sh=Math.max(1,Math.min(sourceHeight-sy,cropHeight));
-  focalReferencePx=Math.max(sourceWidth,sourceHeight);
   captureCanvas.width=Math.round(sw);captureCanvas.height=Math.round(sh);
   captureCanvas.getContext('2d').drawImage(video,sx,sy,sw,sh,0,0,captureCanvas.width,captureCanvas.height);
   loadImage(captureCanvas.toDataURL('image/jpeg',.94));stopCamera();
@@ -307,20 +299,9 @@ function distance(a,b){return Math.hypot(a.x-b.x,a.y-b.y);}
 function calculate(){
   const ballPx=distance(points[0],points[1]),putterPx=distance(points[2],points[3]);
   if(ballPx<5)return alert('골프공 기준점이 너무 가깝습니다. 다시 지정해 주세요.');
-  const focalMm=selectedFocalLength();
-  if(!Number.isFinite(focalMm)||focalMm<18||focalMm>40)return alert('기기의 35mm 환산 초점거리를 18~40mm 범위로 입력해 주세요.');
   const rawMm=putterPx/ballPx*BALL_MM;
-  const focalPx=(focalReferencePx||Math.max(photoCanvas.width,photoCanvas.height))*focalMm/36;
-  const ballCenterDistanceMm=BALL_MM*focalPx/ballPx;
-  const cameraHeightMm=ballCenterDistanceMm+BALL_RADIUS_MM;
-  const correction=cameraHeightMm/(cameraHeightMm-BALL_RADIUS_MM);
-  const correctedMm=rawMm*correction;
-  document.querySelector('#resultCm').textContent=(correctedMm/10).toFixed(1);
-  document.querySelector('#resultIn').textContent=(correctedMm/25.4).toFixed(2);
-  document.querySelector('#estimatedHeight').textContent=`${(cameraHeightMm/10).toFixed(1)} cm`;
-  document.querySelector('#rawLength').textContent=`${(rawMm/10).toFixed(1)} cm`;
-  document.querySelector('#correctionRate').textContent=`+${((correction-1)*100).toFixed(2)}%`;
-  document.querySelector('#focalUsed').textContent=`${focalMm.toFixed(1)} mm eq.`;
+  document.querySelector('#resultCm').textContent=(rawMm/10).toFixed(1);
+  document.querySelector('#resultIn').textContent=(rawMm/25.4).toFixed(2);
   document.querySelector('#ballPixelDiameter').textContent=`${ballPx.toFixed(1)} px`;
   document.querySelector('#putterPixelLength').textContent=`${putterPx.toFixed(1)} px`;
   show('resultScreen');
@@ -351,15 +332,11 @@ document.querySelector('#manualCapture').addEventListener('click',takePhoto);
 document.querySelector('#closeCamera').addEventListener('click',()=>{stopCamera();show('homeScreen');});
 document.querySelector('#retakeButton').addEventListener('click',()=>{points=[];show('homeScreen');});
 document.querySelector('#newMeasure').addEventListener('click',()=>{points=[];show('homeScreen');});
-document.querySelector('#deviceModel').addEventListener('change',e=>{const custom=e.target.value==='custom';document.querySelector('#customFocal').hidden=!custom;localStorage.setItem('webLabDeviceFocal',e.target.value);});
-document.querySelector('#customFocal').addEventListener('change',e=>localStorage.setItem('webLabCustomFocal',e.target.value));
 document.querySelector('#fileInput').addEventListener('change',e=>{
   const input=e.currentTarget,file=input.files?.[0];
   if(!file)return;
   if(!file.type.startsWith('image/')){alert('이미지 파일을 선택해 주세요.');input.value='';return;}
-  focalReferencePx=0;const objectUrl=URL.createObjectURL(file);
+  const objectUrl=URL.createObjectURL(file);
   loadImage(objectUrl,()=>URL.revokeObjectURL(objectUrl));input.value='';
 });
 document.addEventListener('visibilitychange',()=>{if(document.hidden&&stream)stopCamera();});
-const savedFocal=localStorage.getItem('webLabDeviceFocal');if(savedFocal&&[...document.querySelector('#deviceModel').options].some(o=>o.value===savedFocal))document.querySelector('#deviceModel').value=savedFocal;
-document.querySelector('#customFocal').value=localStorage.getItem('webLabCustomFocal')||'25';document.querySelector('#customFocal').hidden=document.querySelector('#deviceModel').value!=='custom';

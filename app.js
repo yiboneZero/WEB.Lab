@@ -108,7 +108,7 @@ function draw(){
 function updateStep(){
   const title=document.querySelector('#stepTitle'),help=document.querySelector('#stepHelp');
   if(points.length<2&&ballMode==='auto'&&!ballCandidate){title.textContent='골프공의 중심을 터치하세요';help.textContent='터치점 주변의 원형 영역에서 골프공을 자동으로 찾습니다.';}
-  else if(points.length<2){title.textContent='골프공의 양 끝을 선택하세요';help.textContent='골프공 지름을 가로지르는 두 점을 차례로 터치하세요.';}
+  else if(points.length<2){title.textContent='골프공 위치를 다시 선택하세요';help.textContent='골프공 중심을 한 번 터치하면 주변에서 자동으로 찾습니다.';}
   else{title.textContent='퍼터의 양 끝을 선택하세요';help.textContent='그립 끝과 퍼터 헤드의 가장 먼 끝을 터치하세요.';}
   document.querySelector('#tapHint').textContent=Math.min(points.length+1,4); document.querySelector('#progressBar').style.width=`${points.length*25}%`;
 }
@@ -184,7 +184,7 @@ function detectBallAt(x,y,scanArea=false){
   ballCandidate=bestRadius&&confidence>7&&deviation<bestRadius*.38?{x,y,radius:bestRadius,baseRadius:bestRadius,score:confidence}:null;
   draw();
   if(ballCandidate){document.querySelector('#ballSize').value='100';document.querySelector('#ballSizeValue').textContent='100%';document.querySelector('#ballConfirm').hidden=false;document.querySelector('#stepTitle').textContent='골프공을 찾았습니다';document.querySelector('#stepHelp').textContent='슬라이더로 초록색 원을 실제 외곽에 정확히 맞추세요.';}
-  else{ballMode='manual';searchRegion=null;alert('골프공 테두리를 찾지 못했습니다. 양 끝을 직접 선택해 주세요.');draw();updateStep();}
+  else{ballMode='auto';searchRegion=null;alert('골프공 테두리를 찾지 못했습니다. 골프공 중심을 다시 터치하거나 다시 촬영해 주세요.');draw();updateStep();}
 }
 function distance(a,b){return Math.hypot(a.x-b.x,a.y-b.y);}
 function calculate(){
@@ -196,14 +196,13 @@ function calculate(){
 photoCanvas.addEventListener('pointerup',e=>{if(points.length>=4||ballCandidate)return;const r=photoCanvas.getBoundingClientRect();const p={x:(e.clientX-r.left)*photoCanvas.width/r.width,y:(e.clientY-r.top)*photoCanvas.height/r.height};if(points.length===0&&ballMode==='auto')return detectBallAt(p.x,p.y);points.push(p);draw();updateStep();if(points.length===4)setTimeout(calculate,300);});
 document.querySelector('#confirmBall').addEventListener('click',()=>{if(!ballCandidate)return;points=[{x:ballCandidate.x-ballCandidate.radius,y:ballCandidate.y},{x:ballCandidate.x+ballCandidate.radius,y:ballCandidate.y}];ballCandidate=null;searchRegion=null;document.querySelector('#ballConfirm').hidden=true;draw();updateStep();});
 document.querySelector('#retryBall').addEventListener('click',()=>{ballCandidate=null;searchRegion=null;document.querySelector('#ballConfirm').hidden=true;draw();updateStep();});
-document.querySelector('#manualBall').addEventListener('click',()=>{ballMode='manual';ballCandidate=null;searchRegion=null;document.querySelector('#ballConfirm').hidden=true;draw();updateStep();});
 document.querySelector('#ballSize').addEventListener('input',e=>{if(!ballCandidate)return;const percent=Number(e.target.value);ballCandidate.radius=ballCandidate.baseRadius*percent/100;document.querySelector('#ballSizeValue').textContent=`${percent}%`;draw();});
 document.querySelector('#startButton').addEventListener('click',startCamera);
 document.querySelector('#manualCapture').addEventListener('click',takePhoto);
 document.querySelector('#closeCamera').addEventListener('click',()=>{stopCamera();show('homeScreen');});
 document.querySelector('#retakeButton').addEventListener('click',()=>{points=[];show('homeScreen');});
 document.querySelector('#newMeasure').addEventListener('click',()=>{points=[];show('homeScreen');});
-document.querySelector('#undoButton').addEventListener('click',()=>{points.pop();if(points.length<2)ballMode='manual';draw();updateStep();});
+document.querySelector('#undoButton').addEventListener('click',()=>{if(points.length<=2){points=[];ballMode='auto';}else points.pop();draw();updateStep();});
 document.querySelector('#resetPoints').addEventListener('click',()=>{points=[];ballMode='auto';ballCandidate=null;searchRegion=null;document.querySelector('#ballConfirm').hidden=true;draw();updateStep();});
 document.querySelector('#fileInput').addEventListener('change',e=>{const f=e.target.files[0];if(f)loadImage(URL.createObjectURL(f));e.target.value='';});
 document.addEventListener('visibilitychange',()=>{if(document.hidden&&stream)stopCamera();});

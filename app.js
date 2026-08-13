@@ -10,6 +10,7 @@ const ctx = photoCanvas.getContext('2d');
 let stream = null, image = null, points = [], stableSince = 0, lastMotion = 0, counting = false, captured = false, gravityAvailable = false;
 let ballMode = 'auto', ballCandidate = null, searchRegion = null;
 let draggedPoint = -1;
+let dragOffset = {x:0,y:0};
 
 function selectedFocalLength(){
   const value=document.querySelector('#deviceModel').value;
@@ -249,16 +250,16 @@ photoCanvas.addEventListener('pointerdown',e=>{
   const p=canvasPoint(e),hitRadius=34*p.scale;
   const candidates=[2,3].map(i=>({i,d:distance(p,points[i])})).filter(v=>v.d<=hitRadius).sort((a,b)=>a.d-b.d);
   if(!candidates.length)return;
-  draggedPoint=candidates[0].i;photoCanvas.setPointerCapture?.(e.pointerId);draw();e.preventDefault();
+  draggedPoint=candidates[0].i;dragOffset={x:points[draggedPoint].x-p.x,y:points[draggedPoint].y-p.y};photoCanvas.setPointerCapture?.(e.pointerId);draw();e.preventDefault();
 });
-photoCanvas.addEventListener('pointermove',e=>{if(draggedPoint<2)return;const p=canvasPoint(e);points[draggedPoint]={x:Math.max(0,Math.min(photoCanvas.width,p.x)),y:Math.max(0,Math.min(photoCanvas.height,p.y))};draw();e.preventDefault();});
+photoCanvas.addEventListener('pointermove',e=>{if(draggedPoint<2)return;const p=canvasPoint(e);points[draggedPoint]={x:Math.max(0,Math.min(photoCanvas.width,p.x+dragOffset.x)),y:Math.max(0,Math.min(photoCanvas.height,p.y+dragOffset.y))};draw();e.preventDefault();});
 photoCanvas.addEventListener('pointerup',e=>{
-  if(draggedPoint>=2){draggedPoint=-1;draw();return;}
+  if(draggedPoint>=2){draggedPoint=-1;dragOffset={x:0,y:0};draw();return;}
   if(points.length>=4||ballCandidate)return;
   const p=canvasPoint(e);if(points.length===0&&ballMode==='auto')return detectBallAt(p.x,p.y);points.push({x:p.x,y:p.y});draw();updateStep();
   if(points.length===4){document.querySelector('#adjustPanel').hidden=false;document.querySelector('#canvasWrap').classList.add('adjusting');updateStep();}
 });
-photoCanvas.addEventListener('pointercancel',()=>{draggedPoint=-1;draw();});
+photoCanvas.addEventListener('pointercancel',()=>{draggedPoint=-1;dragOffset={x:0,y:0};draw();});
 document.querySelector('#confirmBall').addEventListener('click',()=>{if(!ballCandidate)return;points=[{x:ballCandidate.x-ballCandidate.radius,y:ballCandidate.y},{x:ballCandidate.x+ballCandidate.radius,y:ballCandidate.y}];ballCandidate=null;searchRegion=null;document.querySelector('#ballConfirm').hidden=true;draw();updateStep();});
 document.querySelector('#retryBall').addEventListener('click',()=>{ballCandidate=null;searchRegion=null;document.querySelector('#ballConfirm').hidden=true;draw();updateStep();});
 document.querySelector('#ballSize').addEventListener('input',e=>{if(!ballCandidate)return;const percent=Number(e.target.value);ballCandidate.radius=ballCandidate.baseRadius*percent/100;document.querySelector('#ballSizeValue').textContent=`${percent}%`;draw();});

@@ -1,5 +1,5 @@
 const BALL_MM = 42.67;
-const TILT_LIMIT = 0.3;
+const TILT_LIMIT = 0.5;
 const STABLE_MS = 1000;
 const screens = [...document.querySelectorAll('.screen')];
 const video = document.querySelector('#camera');

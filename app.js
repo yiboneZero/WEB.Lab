@@ -89,10 +89,10 @@ function takePhoto(){
   captureCanvas.getContext('2d').drawImage(video,0,0); loadImage(captureCanvas.toDataURL('image/jpeg',.92)); stopCamera();
 }
 
-function loadImage(src){
+function loadImage(src,cleanup){
   const img=new Image();
-  img.onload=()=>{image=img;points=[];ballMode='auto';ballCandidate=null;searchRegion=null;document.querySelector('#ballConfirm').hidden=true;draw();show('measureScreen');updateStep();};
-  img.onerror=()=>alert('사진을 불러오지 못했습니다. JPG, PNG 또는 WebP 사진으로 다시 시도해 주세요.');
+  img.onload=()=>{image=img;points=[];ballMode='auto';ballCandidate=null;searchRegion=null;document.querySelector('#ballConfirm').hidden=true;draw();show('measureScreen');updateStep();cleanup?.();};
+  img.onerror=()=>{cleanup?.();alert('사진을 불러오지 못했습니다. JPG, PNG 또는 WebP 사진으로 다시 시도해 주세요.');};
   img.src=src;
 }
 function draw(){
@@ -196,9 +196,7 @@ document.querySelector('#fileInput').addEventListener('change',e=>{
   const input=e.currentTarget,file=input.files?.[0];
   if(!file)return;
   if(!file.type.startsWith('image/')){alert('이미지 파일을 선택해 주세요.');input.value='';return;}
-  const reader=new FileReader();
-  reader.onload=()=>loadImage(reader.result);
-  reader.onerror=()=>alert('선택한 사진을 읽지 못했습니다. 다른 사진으로 다시 시도해 주세요.');
-  reader.readAsDataURL(file);input.value='';
+  const objectUrl=URL.createObjectURL(file);
+  loadImage(objectUrl,()=>URL.revokeObjectURL(objectUrl));input.value='';
 });
 document.addEventListener('visibilitychange',()=>{if(document.hidden&&stream)stopCamera();});

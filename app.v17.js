@@ -1,6 +1,6 @@
 const BALL_MM = 42.67;
 const BALL_RADIUS_MM = BALL_MM / 2;
-const TILT_LIMIT = 0.5;
+const TILT_LIMIT = 1.0;
 const STABLE_MS = 1000;
 const screens = [...document.querySelectorAll('.screen')];
 const video = document.querySelector('#camera');

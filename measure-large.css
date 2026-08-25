@@ -35,6 +35,11 @@
   font-size: 14px;
 }
 
+/* Use more of the camera preview while keeping the guides clear of the UI. */
+.camera-screen .frame {
+  inset: 12% 7% 20%;
+}
+
 .frame > em {
   position: absolute;
   top: 10px;
@@ -53,4 +58,23 @@
 .camera-screen .level-wrap {
   bottom: calc(24px + env(safe-area-inset-bottom));
   padding: 14px 18px;
+}
+
+@media (max-height: 650px) {
+  .camera-screen .frame {
+    inset-block: 13% 21%;
+  }
+
+  .camera-screen .level-wrap {
+    padding-block: 8px;
+  }
+
+  .camera-screen .level {
+    width: 70px;
+    height: 70px;
+  }
+
+  .camera-screen .level-wrap strong {
+    margin-top: 6px;
+  }
 }

@@ -11,11 +11,13 @@ let ballMode = 'auto', ballCandidate = null, searchRegion = null;
 let draggedPoint = -1, shaftAxis = null;
 let dragOffset = {x:0,y:0};
 let lastTiltX=99,lastTiltY=99;
+let stabilityTimer=null;
 
 function show(id){ screens.forEach(s=>s.classList.toggle('active',s.id===id)); }
-function stopCamera(){ if(stream) stream.getTracks().forEach(t=>t.stop()); stream=null; window.removeEventListener('deviceorientation',onOrientation); window.removeEventListener('devicemotion',onMotion);window.removeEventListener('resize',onViewportChange); }
-function isLandscapeCapture(){return window.innerWidth>window.innerHeight;}
+function stopCamera(){ if(stream) stream.getTracks().forEach(t=>t.stop()); stream=null;if(stabilityTimer)clearInterval(stabilityTimer);stabilityTimer=null; window.removeEventListener('deviceorientation',onOrientation); window.removeEventListener('devicemotion',onMotion);window.removeEventListener('resize',onViewportChange); }
+function isLandscapeCapture(){const viewport=window.visualViewport,wide=(viewport?.width||window.innerWidth)>(viewport?.height||window.innerHeight),media=window.matchMedia?.('(orientation: landscape)')?.matches,type=window.screen?.orientation?.type||'';return Boolean(wide||media||type.startsWith('landscape'));}
 function onViewportChange(){if(stream&&!captured)updateLevel(lastTiltX,lastTiltY);}
+function checkStableCapture(){if(captured||counting||!stream||!isLandscapeCapture())return;if(Math.abs(lastTiltX)<=TILT_LIMIT&&Math.abs(lastTiltY)<=TILT_LIMIT&&stableSince&&performance.now()-stableSince>=STABLE_MS&&performance.now()-lastMotion>=STABLE_MS)autoCountdown();}
 
 async function requestSensors(){
   try{
@@ -43,16 +45,16 @@ function onMotion(e){
   const a=e.acceleration;
   if(a){
     const movement=Math.hypot(a.x||0,a.y||0,a.z||0);
-    if(movement>.35){lastMotion=performance.now();stableSince=0;cancelCountdown();}
+    if(movement>.8){lastMotion=performance.now();stableSince=0;cancelCountdown();}
   }
 }
 
 async function startCamera(){
   captured=false; stableSince=0; counting=false; gravityAvailable=false; show('cameraScreen');
   try{
-    await requestSensors();
+    const sensorsReady=await requestSensors();
     stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1920},height:{ideal:1080}},audio:false});
-    video.srcObject=stream; await video.play();
+    video.srcObject=stream; await video.play();stabilityTimer=setInterval(checkStableCapture,100);if(!sensorsReady){document.querySelector('#levelTitle').textContent='센서 권한이 필요합니다';document.querySelector('#levelDetail').textContent='자동촬영을 위해 동작 및 방향 센서 권한을 허용해 주세요';}
   }catch(err){
     stopCamera(); show('homeScreen');
     alert('카메라를 열 수 없습니다. 카메라 권한을 허용하거나 기존 사진을 불러와 주세요.');

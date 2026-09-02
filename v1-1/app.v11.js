@@ -10,17 +10,19 @@ let stream = null, image = null, points = [], stableSince = 0, lastMotion = 0, c
 let ballMode = 'auto', ballCandidate = null, searchRegion = null;
 let draggedPoint = -1, shaftAxis = null;
 let dragOffset = {x:0,y:0};
+let sensorReceived=false,sensorCheckTimer=null;
 
 function show(id){ screens.forEach(s=>s.classList.toggle('active',s.id===id)); }
-function stopCamera(){ if(stream) stream.getTracks().forEach(t=>t.stop()); stream=null; window.removeEventListener('deviceorientation',onOrientation); window.removeEventListener('devicemotion',onMotion); }
+function stopCamera(){ if(stream) stream.getTracks().forEach(t=>t.stop()); stream=null;if(sensorCheckTimer)clearTimeout(sensorCheckTimer);sensorCheckTimer=null; window.removeEventListener('deviceorientation',onOrientation,true); window.removeEventListener('devicemotion',onMotion,true); }
 
 async function requestSensors(){
   try{
+    let orientationState='granted',motionState='granted';
     if(typeof window.DeviceOrientationEvent?.requestPermission==='function'){
-      const state=await window.DeviceOrientationEvent.requestPermission();
-      if(state!=='granted') return false;
+      orientationState=await window.DeviceOrientationEvent.requestPermission();
     }
-    if(typeof window.DeviceMotionEvent?.requestPermission==='function') await window.DeviceMotionEvent.requestPermission();
+    if(typeof window.DeviceMotionEvent?.requestPermission==='function') motionState=await window.DeviceMotionEvent.requestPermission();
+    if(orientationState!=='granted'||motionState!=='granted')return false;
     window.addEventListener('deviceorientation',onOrientation,true);
     window.addEventListener('devicemotion',onMotion,true);
     return true;
@@ -30,6 +32,7 @@ async function requestSensors(){
 function onMotion(e){
   const gravity=e.accelerationIncludingGravity;
   if(gravity&&gravity.x!=null&&gravity.y!=null&&gravity.z!=null){
+    sensorReceived=true;
     gravityAvailable=true;
     const gx=gravity.x,gy=gravity.y,gz=gravity.z;
     const tiltX=Math.atan2(gx,Math.hypot(gy,gz))*180/Math.PI;
@@ -44,11 +47,13 @@ function onMotion(e){
 }
 
 async function startCamera(){
-  captured=false; stableSince=0; counting=false; gravityAvailable=false; show('cameraScreen');
+  captured=false; stableSince=0; counting=false; gravityAvailable=false;sensorReceived=false; show('cameraScreen');
   try{
-    await requestSensors();
+    const sensorPermission=await requestSensors();
     stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1920},height:{ideal:1080}},audio:false});
     video.srcObject=stream; await video.play();
+    if(!sensorPermission){document.querySelector('#levelTitle').textContent='센서 권한이 꺼져 있습니다';document.querySelector('#levelDetail').textContent='브라우저 설정에서 동작 및 방향 센서를 허용한 뒤 다시 시작하세요';}
+    else sensorCheckTimer=setTimeout(()=>{if(!sensorReceived&&!captured){document.querySelector('#levelTitle').textContent='센서값을 받지 못했습니다';document.querySelector('#levelDetail').textContent='브라우저의 동작 및 방향 센서 권한을 확인한 뒤 다시 시도하세요';}},2500);
   }catch(err){
     stopCamera(); show('homeScreen');
     alert('카메라를 열 수 없습니다. 카메라 권한을 허용하거나 기존 사진을 불러와 주세요.');
@@ -57,6 +62,7 @@ async function startCamera(){
 
 function onOrientation(e){
   if(captured||gravityAvailable) return;
+  if(Number.isFinite(e.gamma)&&Number.isFinite(e.beta))sensorReceived=true;
   updateLevel(e.gamma??99,e.beta??99);
 }
 

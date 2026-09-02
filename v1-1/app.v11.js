@@ -10,12 +10,9 @@ let stream = null, image = null, points = [], stableSince = 0, lastMotion = 0, c
 let ballMode = 'auto', ballCandidate = null, searchRegion = null;
 let draggedPoint = -1, shaftAxis = null;
 let dragOffset = {x:0,y:0};
-let lastTiltX=99,lastTiltY=99;
 
 function show(id){ screens.forEach(s=>s.classList.toggle('active',s.id===id)); }
-function stopCamera(){ if(stream) stream.getTracks().forEach(t=>t.stop()); stream=null; window.removeEventListener('deviceorientation',onOrientation); window.removeEventListener('devicemotion',onMotion);window.removeEventListener('resize',onViewportChange); }
-function isLandscapeCapture(){return window.innerWidth>window.innerHeight;}
-function onViewportChange(){if(stream&&!captured)updateLevel(lastTiltX,lastTiltY);}
+function stopCamera(){ if(stream) stream.getTracks().forEach(t=>t.stop()); stream=null; window.removeEventListener('deviceorientation',onOrientation); window.removeEventListener('devicemotion',onMotion); }
 
 async function requestSensors(){
   try{
@@ -26,7 +23,6 @@ async function requestSensors(){
     if(typeof window.DeviceMotionEvent?.requestPermission==='function') await window.DeviceMotionEvent.requestPermission();
     window.addEventListener('deviceorientation',onOrientation,true);
     window.addEventListener('devicemotion',onMotion,true);
-    window.addEventListener('resize',onViewportChange,true);
     return true;
   }catch{return false;}
 }
@@ -66,12 +62,10 @@ function onOrientation(e){
 
 function updateLevel(x,y){
   if(captured)return;
-  lastTiltX=x;lastTiltY=y;
   const level=document.querySelector('#level');
   const title=document.querySelector('#levelTitle');
   const detail=document.querySelector('#levelDetail');
   level.querySelector('i').style.transform=`translate(${Math.max(-25,Math.min(25,x*2))}px,${Math.max(-25,Math.min(25,y*2))}px)`;
-  if(!isLandscapeCapture()){level.classList.remove('ok');stableSince=0;cancelCountdown();title.textContent='휴대폰을 가로로 돌려주세요';detail.textContent='눕힌 퍼터 전체가 좌우로 보이는 가로 화면에서 촬영합니다';return;}
   const ok=Math.abs(x)<=TILT_LIMIT&&Math.abs(y)<=TILT_LIMIT;
   level.classList.toggle('ok',ok);
   if(ok){
@@ -92,7 +86,7 @@ async function autoCountdown(){
 function cancelCountdown(){ counting=false; document.querySelector('#countdown').textContent=''; }
 
 function takePhoto(){
-  if(captured||!video.videoWidth||!isLandscapeCapture())return; captured=true; cancelCountdown();
+  if(captured||!video.videoWidth)return; captured=true; cancelCountdown();
   const frame=document.querySelector('.frame').getBoundingClientRect(),videoRect=video.getBoundingClientRect();
   const sourceWidth=video.videoWidth,sourceHeight=video.videoHeight,coverScale=Math.max(videoRect.width/sourceWidth,videoRect.height/sourceHeight);
   const renderedWidth=sourceWidth*coverScale,renderedHeight=sourceHeight*coverScale;

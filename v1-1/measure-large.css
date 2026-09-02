@@ -54,3 +54,14 @@
   bottom: calc(24px + env(safe-area-inset-bottom));
   padding: 14px 18px;
 }
+
+@media (orientation: landscape) {
+  .camera-screen .frame { inset: 15% 6% 24%; }
+  .camera-screen .camera-top { top: calc(8px + env(safe-area-inset-top)); }
+  .camera-screen .level-wrap { bottom: calc(8px + env(safe-area-inset-bottom)); padding: 5px 18px; }
+  .camera-screen .level { width: 62px; height: 62px; }
+  .camera-screen .level b { inset: 22px; }
+  .camera-screen .level:before { left: 8px; right: 8px; }
+  .camera-screen .level:after { top: 8px; bottom: 8px; }
+  .camera-screen .level-wrap strong { margin-top: 5px; }
+}

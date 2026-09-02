@@ -10,9 +10,12 @@ let stream = null, image = null, points = [], stableSince = 0, lastMotion = 0, c
 let ballMode = 'auto', ballCandidate = null, searchRegion = null;
 let draggedPoint = -1, shaftAxis = null;
 let dragOffset = {x:0,y:0};
+let lastTiltX=99,lastTiltY=99;
 
 function show(id){ screens.forEach(s=>s.classList.toggle('active',s.id===id)); }
-function stopCamera(){ if(stream) stream.getTracks().forEach(t=>t.stop()); stream=null; window.removeEventListener('deviceorientation',onOrientation); window.removeEventListener('devicemotion',onMotion); }
+function stopCamera(){ if(stream) stream.getTracks().forEach(t=>t.stop()); stream=null; window.removeEventListener('deviceorientation',onOrientation); window.removeEventListener('devicemotion',onMotion);window.removeEventListener('resize',onViewportChange); }
+function isLandscapeCapture(){return window.innerWidth>window.innerHeight;}
+function onViewportChange(){if(stream&&!captured)updateLevel(lastTiltX,lastTiltY);}
 
 async function requestSensors(){
   try{
@@ -23,6 +26,7 @@ async function requestSensors(){
     if(typeof window.DeviceMotionEvent?.requestPermission==='function') await window.DeviceMotionEvent.requestPermission();
     window.addEventListener('deviceorientation',onOrientation,true);
     window.addEventListener('devicemotion',onMotion,true);
+    window.addEventListener('resize',onViewportChange,true);
     return true;
   }catch{return false;}
 }
@@ -62,10 +66,12 @@ function onOrientation(e){
 
 function updateLevel(x,y){
   if(captured)return;
+  lastTiltX=x;lastTiltY=y;
   const level=document.querySelector('#level');
   const title=document.querySelector('#levelTitle');
   const detail=document.querySelector('#levelDetail');
   level.querySelector('i').style.transform=`translate(${Math.max(-25,Math.min(25,x*2))}px,${Math.max(-25,Math.min(25,y*2))}px)`;
+  if(!isLandscapeCapture()){level.classList.remove('ok');stableSince=0;cancelCountdown();title.textContent='휴대폰을 가로로 돌려주세요';detail.textContent='눕힌 퍼터 전체가 좌우로 보이는 가로 화면에서 촬영합니다';return;}
   const ok=Math.abs(x)<=TILT_LIMIT&&Math.abs(y)<=TILT_LIMIT;
   level.classList.toggle('ok',ok);
   if(ok){
@@ -86,7 +92,7 @@ async function autoCountdown(){
 function cancelCountdown(){ counting=false; document.querySelector('#countdown').textContent=''; }
 
 function takePhoto(){
-  if(captured||!video.videoWidth)return; captured=true; cancelCountdown();
+  if(captured||!video.videoWidth||!isLandscapeCapture())return; captured=true; cancelCountdown();
   const frame=document.querySelector('.frame').getBoundingClientRect(),videoRect=video.getBoundingClientRect();
   const sourceWidth=video.videoWidth,sourceHeight=video.videoHeight,coverScale=Math.max(videoRect.width/sourceWidth,videoRect.height/sourceHeight);
   const renderedWidth=sourceWidth*coverScale,renderedHeight=sourceHeight*coverScale;
@@ -297,12 +303,49 @@ function detectBallAt(x,y){
   else{ballMode='auto';searchRegion=null;alert('골프공 테두리를 찾지 못했습니다. 골프공 중심을 다시 터치하거나 다시 촬영해 주세요.');draw();updateStep();}
 }
 function distance(a,b){return Math.hypot(a.x-b.x,a.y-b.y);}
+function captureHorizontalBallPoints(ball){return[{x:ball.x,y:ball.y-ball.radius},{x:ball.x,y:ball.y+ball.radius}];}
+function captureHorizontalBallDiameter(){return points.length>=2?Math.abs(points[1].y-points[0].y):0;}
+function constrainPointToShaftAxis(point){
+  if(!shaftAxis)return point;const t=(point.x-shaftAxis.x)*shaftAxis.ux+(point.y-shaftAxis.y)*shaftAxis.uy,candidates=[];
+  if(Math.abs(shaftAxis.ux)>.0001){candidates.push((0-shaftAxis.x)/shaftAxis.ux,(photoCanvas.width-shaftAxis.x)/shaftAxis.ux);}if(Math.abs(shaftAxis.uy)>.0001){candidates.push((0-shaftAxis.y)/shaftAxis.uy,(photoCanvas.height-shaftAxis.y)/shaftAxis.uy);}
+  const valid=candidates.filter(v=>{const x=shaftAxis.x+shaftAxis.ux*v,y=shaftAxis.y+shaftAxis.uy*v;return x>=-1&&x<=photoCanvas.width+1&&y>=-1&&y<=photoCanvas.height+1;}),minT=valid.length?Math.min(...valid):t,maxT=valid.length?Math.max(...valid):t,clamped=Math.max(minT,Math.min(maxT,t));return{x:shaftAxis.x+shaftAxis.ux*clamped,y:shaftAxis.y+shaftAxis.uy*clamped};
+}
 function fitAxisPca(samples){
   if(samples.length<4)return null;const x=samples.reduce((s,p)=>s+p.x,0)/samples.length,y=samples.reduce((s,p)=>s+p.y,0)/samples.length;
   let xx=0,xy=0,yy=0;for(const p of samples){const dx=p.x-x,dy=p.y-y;xx+=dx*dx;xy+=dx*dy;yy+=dy*dy;}
   const angle=.5*Math.atan2(2*xy,xx-yy);return{x,y,ux:Math.cos(angle),uy:Math.sin(angle)};
 }
 function sampleGray(data,w,h,x,y){x=Math.max(0,Math.min(w-1,Math.round(x)));y=Math.max(0,Math.min(h-1,Math.round(y)));return luminance(data,(y*w+x)*4);}
+function sampleRgb(data,w,h,x,y){x=Math.max(0,Math.min(w-1,Math.round(x)));y=Math.max(0,Math.min(h-1,Math.round(y)));const i=(y*w+x)*4;return[data[i],data[i+1],data[i+2]];}
+function colorDistance(a,b){return Math.hypot(a[0]-b[0],a[1]-b[1],a[2]-b[2]);}
+function medianNumber(values){if(!values.length)return null;const sorted=[...values].sort((a,b)=>a-b),middle=Math.floor(sorted.length/2);return sorted.length%2?sorted[middle]:(sorted[middle-1]+sorted[middle])/2;}
+function detectShaftAndEndpointsAutomatic(){
+  shaftAxis=null;if(!image)return false;
+  const sample=document.createElement('canvas'),maxSide=720,scale=Math.min(1,maxSide/Math.max(photoCanvas.width,photoCanvas.height));sample.width=Math.max(1,Math.round(photoCanvas.width*scale));sample.height=Math.max(1,Math.round(photoCanvas.height*scale));
+  const sctx=sample.getContext('2d',{willReadFrequently:true});sctx.drawImage(image,0,0,sample.width,sample.height);const w=sample.width,h=sample.height,data=sctx.getImageData(0,0,w,h).data,gray=new Float32Array(w*h),edges=[],magnitudes=[];
+  for(let i=0;i<w*h;i++)gray[i]=luminance(data,i*4);
+  for(let y=2;y<h-2;y+=2)for(let x=2;x<w-2;x+=2){const i=y*w+x,gx=gray[i+1]-gray[i-1],gy=gray[i+w]-gray[i-w],m=Math.hypot(gx,gy);magnitudes.push(m);edges.push({x,y,gx,gy,m});}
+  magnitudes.sort((a,b)=>a-b);const threshold=Math.max(20,magnitudes[Math.floor(magnitudes.length*.82)]||20),strong=edges.filter(e=>e.m>=threshold);if(strong.length<100)return false;
+  const diag=Math.ceil(Math.hypot(w,h)),rhoSize=diag*2+3,candidates=[];
+  for(let angle=0;angle<180;angle+=2){const rad=angle*Math.PI/180,d={x:Math.cos(rad),y:Math.sin(rad)},n={x:-d.y,y:d.x},pos=new Uint16Array(rhoSize),neg=new Uint16Array(rhoSize);
+    for(const e of strong){const align=(e.gx*n.x+e.gy*n.y)/Math.max(1,e.m);if(Math.abs(align)<.68)continue;const r=Math.round(e.x*n.x+e.y*n.y)+diag;(align>=0?pos:neg)[r]++;}
+    const peaks=(arr,sign)=>{const out=[];for(let r=2;r<rhoSize-2;r++)if(arr[r]>=6&&arr[r]>=arr[r-1]&&arr[r]>=arr[r+1])out.push({rho:r-diag,v:arr[r],sign});return out.sort((a,b)=>b.v-a.v).slice(0,12);},left=peaks(pos,1),right=peaks(neg,-1),minWidth=Math.max(2,w*.0025),maxWidth=Math.max(10,w*.035);
+    for(const a of left)for(const b of right){const width=Math.abs(a.rho-b.rho);if(width>=minWidth&&width<=maxWidth)candidates.push({d,n,rho:(a.rho+b.rho)/2,width,votes:a.v+b.v});}
+  }
+  candidates.sort((a,b)=>b.votes-a.votes);let best=null;
+  for(const c of candidates.slice(0,90)){const step=Math.max(2,c.width*.7),hits=[];for(let t=-diag;t<=diag;t+=step){const x=c.n.x*c.rho+c.d.x*t,y=c.n.y*c.rho+c.d.y*t;if(x<2||y<2||x>=w-2||y>=h-2)continue;const gap=Math.max(1.2,c.width*.2),lx=x-c.n.x*c.width/2,ly=y-c.n.y*c.width/2,rx=x+c.n.x*c.width/2,ry=y+c.n.y*c.width/2,gl=sampleGray(data,w,h,lx+c.n.x*gap,ly+c.n.y*gap)-sampleGray(data,w,h,lx-c.n.x*gap,ly-c.n.y*gap),gr=sampleGray(data,w,h,rx+c.n.x*gap,ry+c.n.y*gap)-sampleGray(data,w,h,rx-c.n.x*gap,ry-c.n.y*gap),strength=Math.abs(gl)+Math.abs(gr);if(gl*gr<0&&strength>=threshold*.65)hits.push(t);}
+    if(hits.length<12)continue;hits.sort((a,b)=>a-b);let runs=[],run=[hits[0]];for(let i=1;i<hits.length;i++){if(hits[i]-hits[i-1]<=step*3.2)run.push(hits[i]);else{runs.push(run);run=[hits[i]];}}runs.push(run);runs.sort((a,b)=>(b[b.length-1]-b[0])-(a[a.length-1]-a[0]));const chosen=runs[0],span=chosen[chosen.length-1]-chosen[0],score=span+c.votes*1.5;if(span>Math.max(w,h)*.22&&(!best||score>best.score))best={...c,minT:chosen[0],maxT:chosen[chosen.length-1],score};
+  }
+  if(!best)return false;const axis={x:best.n.x*best.rho/scale,y:best.n.y*best.rho/scale,ux:best.d.x,uy:best.d.y};shaftAxis=axis;
+  const lineOrigin={x:best.n.x*best.rho,y:best.n.y*best.rho},bounds=[];if(Math.abs(best.d.x)>.0001){bounds.push((1-lineOrigin.x)/best.d.x,(w-2-lineOrigin.x)/best.d.x);}if(Math.abs(best.d.y)>.0001){bounds.push((1-lineOrigin.y)/best.d.y,(h-2-lineOrigin.y)/best.d.y);}const validBounds=bounds.filter(t=>{const x=lineOrigin.x+best.d.x*t,y=lineOrigin.y+best.d.y*t;return x>=0&&x<w&&y>=0&&y<h;}),traceStart=Math.min(...validBounds),traceEnd=Math.max(...validBounds),traceStep=2,backgroundGap=Math.max(best.width*7,18),offsets=[-.38,-.25,-.12,0,.12,.25,.38].map(v=>v*best.width),endStarts=[],endFinishes=[],contrastLimit=Math.max(22,threshold*.5),backgroundNeeded=Math.max(4,Math.round(best.width*.8/traceStep)),objectNeeded=Math.max(4,Math.round(best.width*1.25/traceStep));
+  function boundaryFromEdge(samples,reverse){const ordered=reverse?[...samples].reverse():samples;let backgroundRun=0;for(let i=0;i<ordered.length-objectNeeded;i++){if(!ordered[i].fg){backgroundRun++;continue;}if(backgroundRun<backgroundNeeded){backgroundRun=0;continue;}let support=0;for(let k=0;k<objectNeeded;k++)if(ordered[i+k].fg)support++;if(support>=Math.ceil(objectNeeded*.72))return ordered[i].t;backgroundRun=0;}return null;}
+  for(const offset of offsets){const samples=[];for(let t=traceStart;t<=traceEnd;t+=traceStep){const cx=lineOrigin.x+best.d.x*t+best.n.x*offset,cy=lineOrigin.y+best.d.y*t+best.n.y*offset;if(cx<2||cy<2||cx>=w-2||cy>=h-2)continue;const pixel=sampleRgb(data,w,h,cx,cy),bgA=sampleRgb(data,w,h,cx+best.n.x*backgroundGap,cy+best.n.y*backgroundGap),bgB=sampleRgb(data,w,h,cx-best.n.x*backgroundGap,cy-best.n.y*backgroundGap),contrast=Math.min(colorDistance(pixel,bgA),colorDistance(pixel,bgB));samples.push({t,fg:contrast>=contrastLimit});}
+    const fromStart=boundaryFromEdge(samples,false),fromEnd=boundaryFromEdge(samples,true);if(fromStart!=null)endStarts.push(fromStart);if(fromEnd!=null)endFinishes.push(fromEnd);
+  }
+  const startConsensus=endStarts.length,endConsensus=endFinishes.length,consensus=Math.min(startConsensus,endConsensus),fallbackExtension=Math.max((best.maxT-best.minT)*.18,best.width*8),minT=startConsensus>=3?medianNumber(endStarts):best.minT-fallbackExtension,maxT=endConsensus>=3?medianNumber(endFinishes):best.maxT+fallbackExtension;
+  const p1={x:(best.n.x*best.rho+best.d.x*minT)/scale,y:(best.n.y*best.rho+best.d.y*minT)/scale},p2={x:(best.n.x*best.rho+best.d.x*maxT)/scale,y:(best.n.y*best.rho+best.d.y*maxT)/scale};points=[points[0],points[1],p1,p2];
+  document.querySelector('#axisStatus').hidden=false;document.querySelector('#axisStatus span').textContent=consensus>=5?`촬영 영역 양 끝에서 들어오며 그린→퍼터 경계를 ${consensus}/7 탐색선이 확인했습니다.`:`양 끝 경계 신뢰도가 낮습니다(시작 ${startConsensus}/7 · 끝 ${endConsensus}/7). 중심축 위에서 포인트를 보정해 주세요.`;document.querySelector('#canvasWrap').classList.add('adjusting');draw();updateStep();return true;
+}
 function refineOfficialAxisPoints(){
   shaftAxis=null;if(!image||points.length<4)return false;
   const roughA=points[2],roughB=points[3],dx=roughB.x-roughA.x,dy=roughB.y-roughA.y,len=Math.hypot(dx,dy);if(len<100)return false;
@@ -322,7 +365,7 @@ function refineOfficialAxisPoints(){
   snapEndpoint(roughT[0],2);snapEndpoint(roughT[1],3);document.querySelector('#axisStatus').hidden=false;return true;
 }
 function calculate(){
-  const ballPx=distance(points[0],points[1]),putterPx=distance(points[2],points[3]);
+  const ballPx=captureHorizontalBallDiameter(),putterPx=distance(points[2],points[3]);
   if(ballPx<5)return alert('골프공 기준점이 너무 가깝습니다. 다시 지정해 주세요.');
   const rawMm=putterPx/ballPx*BALL_MM;
   document.querySelector('#resultCm').textContent=(rawMm/10).toFixed(1);
@@ -340,7 +383,7 @@ photoCanvas.addEventListener('pointerdown',e=>{
   if(!candidates.length)return;
   draggedPoint=candidates[0].i;dragOffset={x:points[draggedPoint].x-p.x,y:points[draggedPoint].y-p.y};photoCanvas.setPointerCapture?.(e.pointerId);draw();e.preventDefault();
 });
-photoCanvas.addEventListener('pointermove',e=>{if(draggedPoint<2)return;const p=canvasPoint(e);points[draggedPoint]={x:Math.max(0,Math.min(photoCanvas.width,p.x+dragOffset.x)),y:Math.max(0,Math.min(photoCanvas.height,p.y+dragOffset.y))};draw();e.preventDefault();});
+photoCanvas.addEventListener('pointermove',e=>{if(draggedPoint<2)return;const p=canvasPoint(e),desired={x:Math.max(0,Math.min(photoCanvas.width,p.x+dragOffset.x)),y:Math.max(0,Math.min(photoCanvas.height,p.y+dragOffset.y))};points[draggedPoint]=constrainPointToShaftAxis(desired);draw();e.preventDefault();});
 photoCanvas.addEventListener('pointerup',e=>{
   if(draggedPoint>=2){draggedPoint=-1;dragOffset={x:0,y:0};draw();return;}
   if(points.length>=4||ballCandidate)return;
@@ -348,7 +391,7 @@ photoCanvas.addEventListener('pointerup',e=>{
   if(points.length===4){refineOfficialAxisPoints();document.querySelector('#canvasWrap').classList.add('adjusting');draw();updateStep();}
 });
 photoCanvas.addEventListener('pointercancel',()=>{draggedPoint=-1;dragOffset={x:0,y:0};draw();});
-document.querySelector('#confirmBall').addEventListener('click',()=>{if(!ballCandidate)return;points=[{x:ballCandidate.x-ballCandidate.radius,y:ballCandidate.y},{x:ballCandidate.x+ballCandidate.radius,y:ballCandidate.y}];ballCandidate=null;searchRegion=null;document.querySelector('#ballConfirm').hidden=true;draw();updateStep();});
+document.querySelector('#confirmBall').addEventListener('click',()=>{if(!ballCandidate)return;points=captureHorizontalBallPoints(ballCandidate);ballCandidate=null;searchRegion=null;document.querySelector('#ballConfirm').hidden=true;draw();if(!detectShaftAndEndpointsAutomatic()){document.querySelector('#axisStatus').hidden=true;updateStep();document.querySelector('#stepHelp').textContent='자동 검출하지 못했습니다. 그립 상단과 솔 기준점 주변을 차례로 선택해 주세요.';}});
 document.querySelector('#retryBall').addEventListener('click',()=>{ballCandidate=null;searchRegion=null;document.querySelector('#ballConfirm').hidden=true;draw();updateStep();});
 document.querySelector('#ballSize').addEventListener('input',e=>{if(!ballCandidate)return;const percent=Number(e.target.value);ballCandidate.radius=ballCandidate.baseRadius*percent/100;document.querySelector('#ballSizeValue').textContent=`${percent}%`;draw();});
 document.querySelector('#confirmPutter').addEventListener('click',calculate);

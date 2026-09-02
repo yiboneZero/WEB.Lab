@@ -21,4 +21,10 @@ assert(sandbox.offAxis<.001,'manual endpoint adjustment must stay on the detecte
 assert.strictEqual(sandbox.ballDetector,'function','V1.1 should include the existing golf-ball detector');
 assert(sandbox.autoOk,'full-image shaft detection should succeed');
 assert.strictEqual(sandbox.autoPoints,4,'automatic detection should place both measurement points');
+const ballWidth=180,ballHeight=180,ballCenter={x:90,y:88},ballRadius=31.4,ballPixels=new Uint8ClampedArray(ballWidth*ballHeight*4);
+for(let y=0;y<ballHeight;y++)for(let x=0;x<ballWidth;x++){const d=Math.hypot(x-ballCenter.x,y-ballCenter.y),mix=Math.max(0,Math.min(1,(ballRadius+1.4-d)/2.8)),i=(y*ballWidth+x)*4,ground=[55,112,45],ball=[238,226,64];for(let c=0;c<3;c++)ballPixels[i+c]=Math.round(ground[c]*(1-mix)+ball[c]*mix);ballPixels[i+3]=255;}
+sandbox.ballPixels=ballPixels;
+vm.runInContext(`this.mixed=refineMixedColorBoundary(ballPixels,${ballWidth},${ballHeight},{x:${ballCenter.x},y:${ballCenter.y},radius:29.5,baseRadius:29.5});`,sandbox);
+assert.strictEqual(sandbox.mixed.method,'background-mixed-boundary-fit','mixed ball/background boundary should be refined');
+assert(Math.abs(sandbox.mixed.radius-ballRadius)<1.5,`expected mixed boundary near ${ballRadius}, got ${sandbox.mixed.radius}`);
 console.log('V1.1 synthetic shaft-axis test passed.');

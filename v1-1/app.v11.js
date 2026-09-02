@@ -199,6 +199,15 @@ function refineBallOuterEdge(pixels,width,height,initial,step){
   if(!refined||refined.error>.08||refined.radius<initial.radius*.88||refined.radius>initial.radius*1.35)return initial;
   return{...refined,baseRadius:refined.radius,score:median(consistent.map(p=>p.score)),method:'outer-edge-circle-fit'};
 }
+function bilinearRgb(pixels,width,height,x,y){const x0=Math.max(0,Math.min(width-1,Math.floor(x))),y0=Math.max(0,Math.min(height-1,Math.floor(y))),x1=Math.min(width-1,x0+1),y1=Math.min(height-1,y0+1),fx=x-x0,fy=y-y0,out=[0,0,0];for(let c=0;c<3;c++){const a=pixels[(y0*width+x0)*4+c]*(1-fx)+pixels[(y0*width+x1)*4+c]*fx,b=pixels[(y1*width+x0)*4+c]*(1-fx)+pixels[(y1*width+x1)*4+c]*fx;out[c]=a*(1-fy)+b*fy;}return out;}
+function refineMixedColorBoundary(pixels,width,height,initial){
+  if(!initial||initial.radius<4)return initial;const ballSamples=[],backgroundSamples=[[],[],[]],innerLimit=initial.radius*.58,ringMin=initial.radius*1.38,ringMax=initial.radius*2.08;
+  for(let angle=0;angle<Math.PI*2;angle+=Math.PI/36){const cs=Math.cos(angle),sn=Math.sin(angle);for(const radius of [innerLimit*.45,innerLimit*.72,innerLimit])ballSamples.push(bilinearRgb(pixels,width,height,initial.x+cs*radius,initial.y+sn*radius));for(let radius=ringMin;radius<=ringMax;radius+=Math.max(2,initial.radius*.16)){const px=initial.x+cs*radius,py=initial.y+sn*radius;if(px<1||py<1||px>=width-1||py>=height-1)continue;const color=bilinearRgb(pixels,width,height,px,py);for(let c=0;c<3;c++)backgroundSamples[c].push(color[c]);}}
+  if(ballSamples.length<30||backgroundSamples[0].length<40)return initial;const ballColor=[0,1,2].map(c=>median(ballSamples.map(v=>v[c]))),backgroundColor=[0,1,2].map(c=>median(backgroundSamples[c]));if(colorDistance(ballColor,backgroundColor)<24)return initial;
+  const edgePoints=[],minR=initial.radius*.7,maxR=initial.radius*1.3;
+  for(let angle=0;angle<Math.PI*2;angle+=Math.PI/90){const cs=Math.cos(angle),sn=Math.sin(angle);let previous=null,boundary=null;for(let radius=minR;radius<=maxR;radius+=.5){const px=initial.x+cs*radius,py=initial.y+sn*radius;if(px<1||py<1||px>=width-1||py>=height-1)break;const color=bilinearRgb(pixels,width,height,px,py),value=colorDistance(color,backgroundColor)-colorDistance(color,ballColor);if(previous&&previous.value>=0&&value<=0){const fraction=previous.value/(previous.value-value||1),mixedRadius=previous.radius+(radius-previous.radius)*fraction,before=bilinearRgb(pixels,width,height,initial.x+cs*(mixedRadius-1.5),initial.y+sn*(mixedRadius-1.5)),after=bilinearRgb(pixels,width,height,initial.x+cs*(mixedRadius+1.5),initial.y+sn*(mixedRadius+1.5));if(colorDistance(before,after)>10)boundary=mixedRadius;break;}previous={radius,value};}if(boundary)edgePoints.push({x:initial.x+cs*boundary,y:initial.y+sn*boundary});}
+  if(edgePoints.length<70)return initial;const refined=robustCircle(edgePoints,.5);if(!refined||refined.error>.055||refined.radius<initial.radius*.84||refined.radius>initial.radius*1.18)return initial;return{...initial,...refined,baseRadius:refined.radius,method:'background-mixed-boundary-fit',boundaryPoints:edgePoints.length};
+}
 function detectContrastBlob(pixels,width,height,x,y,roiRadius){
   const step=Math.max(1,Math.round(roiRadius/110));
   const centerSamples=[],backgroundSamples=[];
@@ -229,7 +238,7 @@ function detectContrastBlob(pixels,width,height,x,y,roiRadius){
   const circle=robustCircle(boundary,step);if(!circle)return null;
   if(circle.error>.12||circle.radius<roiRadius*.045||circle.radius>roiRadius*.34||Math.hypot(circle.x-x,circle.y-y)>circle.radius*1.25)return null;
   const initial={x:circle.x,y:circle.y,radius:circle.radius,baseRadius:circle.radius,score:Math.abs(contrast),fitError:circle.error,method:'robust-circle-fit'};
-  return refineBallOuterEdge(pixels,width,height,initial,step);
+  return refineMixedColorBoundary(pixels,width,height,refineBallOuterEdge(pixels,width,height,initial,step));
 }
 function findBallInRegion(pixels,width,height,x,y,roiRadius){
   const step=Math.max(1,Math.round(roiRadius/100)),left=Math.max(0,Math.floor(x-roiRadius)),top=Math.max(0,Math.floor(y-roiRadius));
@@ -268,7 +277,7 @@ function findBallInRegion(pixels,width,height,x,y,roiRadius){
     const circle=robustCircle(boundary,step);if(!circle||circle.error>.15||circle.radius<roiRadius*.025||circle.radius>roiRadius*.28)continue;
     if(Math.hypot(circle.x-x,circle.y-y)+circle.radius>roiRadius*.94)continue;
     const initial={...circle,baseRadius:circle.radius,score:(brightTone-background)*ratio,fitError:circle.error,method:'region-component-circle'};
-    const refined=refineBallOuterEdge(pixels,width,height,initial,step);
+    const refined=refineMixedColorBoundary(pixels,width,height,refineBallOuterEdge(pixels,width,height,initial,step));
     candidates.push({...refined,regionScore:refined.radius*ratio/(1+(refined.error||circle.error)*8)});
   }
   candidates.sort((a,b)=>b.regionScore-a.regionScore);return candidates[0]||null;
@@ -280,7 +289,7 @@ function detectBallAt(x,y){
   searchRegion={x,y,radius:roiRadius};
   const contrastBall=findBallInRegion(pixels,photoCanvas.width,photoCanvas.height,x,y,roiRadius);
   if(contrastBall){
-    ballCandidate=contrastBall;draw();document.querySelector('#ballSize').value='100';document.querySelector('#ballSizeValue').textContent='100%';document.querySelector('#ballConfirm').hidden=false;document.querySelector('#stepTitle').textContent='골프공을 찾았습니다';document.querySelector('#stepHelp').textContent='외곽점에 원의 방정식을 맞췄습니다. 초록색 원을 확인하세요.';return;
+    ballCandidate=contrastBall;draw();document.querySelector('#ballSize').value='100';document.querySelector('#ballSizeValue').textContent='100%';document.querySelector('#ballConfirm').hidden=false;document.querySelector('#stepTitle').textContent='골프공을 찾았습니다';document.querySelector('#stepHelp').textContent=contrastBall.method==='background-mixed-boundary-fit'?'주변 바닥색을 학습하고 색상이 섞이는 경계까지 정밀 보정했습니다.':'외곽점에 원의 방정식을 맞췄습니다. 초록색 원을 확인하세요.';return;
   }
   const edgeRadii=[],edgeScores=[];
   const minR=Math.max(8,Math.round(roiRadius*.12)),maxR=Math.round(roiRadius*.78);
@@ -297,7 +306,7 @@ function detectBallAt(x,y){
     if(rayRadius){edgeRadii.push(rayRadius);edgeScores.push(rayScore);}
   }
   const bestRadius=median(edgeRadii),deviation=median(edgeRadii.map(r=>Math.abs(r-bestRadius))),confidence=median(edgeScores);
-  ballCandidate=bestRadius&&confidence>7&&deviation<bestRadius*.38?{x,y,radius:bestRadius,baseRadius:bestRadius,score:confidence}:null;
+  ballCandidate=bestRadius&&confidence>7&&deviation<bestRadius*.38?refineMixedColorBoundary(pixels,photoCanvas.width,photoCanvas.height,{x,y,radius:bestRadius,baseRadius:bestRadius,score:confidence}):null;
   draw();
   if(ballCandidate){document.querySelector('#ballSize').value='100';document.querySelector('#ballSizeValue').textContent='100%';document.querySelector('#ballConfirm').hidden=false;document.querySelector('#stepTitle').textContent='골프공을 찾았습니다';document.querySelector('#stepHelp').textContent='슬라이더로 초록색 원을 실제 외곽에 정확히 맞추세요.';}
   else{ballMode='auto';searchRegion=null;alert('골프공 테두리를 찾지 못했습니다. 골프공 중심을 다시 터치하거나 다시 촬영해 주세요.');draw();updateStep();}
